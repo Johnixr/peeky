@@ -126,7 +126,7 @@ pub fn execute_tool(
     // §3.2 permission gate (the §3.3 hard-forbidden list is enforced inside the
     // tools themselves). Low runs everywhere; Mid needs YOLO (until the confirm
     // dialog lands).
-    tools::check_permission(permission, risk(name)).map_err(|e| e.to_string())?;
+    tools::check_permission(permission, risk(name), name, args).map_err(|e| e.to_string())?;
 
     match name {
         "get_context" => {

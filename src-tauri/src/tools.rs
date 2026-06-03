@@ -194,19 +194,43 @@ pub enum RiskTier {
 /// the coarse YOLO/Auto/Cautious policy and never blocks Low-risk tools. Mid/
 /// High tools under Auto/Cautious return `Err(Forbidden)` so the caller stops
 /// and surfaces the plan to the user instead of silently acting.
-pub fn check_permission(mode: PermissionMode, tier: RiskTier) -> Result<()> {
+pub fn check_permission(mode: PermissionMode, tier: RiskTier, tool_name: &str, args: &serde_json::Value) -> Result<()> {
     let needs_confirm = match (mode, tier) {
-        (PermissionMode::Yolo, RiskTier::High) => true, // §3.3: YOLO still confirms High.
+        (PermissionMode::Yolo, RiskTier::High) => true,
+        (PermissionMode::Yolo, RiskTier::Mid) => true, // Security fix: always confirm Mid (Actuation) due to prompt injection RCE risk
         (PermissionMode::Yolo, _) => false,
         (PermissionMode::Auto, RiskTier::Low) => false,
         (PermissionMode::Auto, _) => true,
         (PermissionMode::Cautious, _) => true,
     };
+
     if needs_confirm {
-        return Err(AppError::Forbidden(format!(
-            "operation requires user confirmation under {mode:?} permission mode \
-             (risk {tier:?}); confirmation flow is TODO(P1)"
-        )));
+        let desc = format!("Peeky wants to run tool '{}' with arguments: {}", tool_name, args);
+        let safe_desc = desc.replace('\\', "\\\\").replace('"', "\\\"");
+        let script = format!(
+            "tell application \"System Events\"\n\
+             activate\n\
+             display dialog \"{}\" with title \"Peeky Security Confirmation\" buttons {{\"Deny\", \"Allow\"}} default button \"Deny\" with icon caution giving up after 60\n\
+             set btn to button returned of result\n\
+             return btn\n\
+             end tell",
+            safe_desc
+        );
+
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|e| AppError::Other(anyhow::anyhow!("Failed to run osascript: {}", e)))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if stdout.trim() == "Allow" {
+            return Ok(());
+        } else {
+            return Err(AppError::Forbidden(
+                "operation denied by user or timed out.".to_string()
+            ));
+        }
     }
     Ok(())
 }
