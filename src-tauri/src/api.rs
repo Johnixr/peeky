@@ -230,6 +230,10 @@ pub async fn stream_chat(
                 }
             }
 
+            if full_text.len() > 100_000 {
+                return Err(anyhow!("response exceeded maximum allowed length"));
+            }
+
             // Capture usage if the server provides it (often on the final frame).
             if let Some(usage) = parsed.get("usage").filter(|u| !u.is_null()) {
                 if let Some(pt) = usage.get("prompt_tokens").and_then(Value::as_u64) {
