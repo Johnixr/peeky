@@ -146,7 +146,7 @@ impl Default for QuietHours {
 /// `config_dir()/peeky/config.json` and synced to the frontend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    /// OpenAI-compatible base URL, e.g. "https://platform.stepfun.com/v1".
+    /// OpenAI-compatible base URL, e.g. "https://api.stepfun.com/v1".
     pub api_base_url: String,
     /// API key. May be empty here and supplied via PEEKY_API_KEY env instead
     /// (PRD §1.5 secret rule — never hardcode private keys).
@@ -186,7 +186,7 @@ impl Default for Config {
     /// empty on purpose: it must come from the user or PEEKY_API_KEY.
     fn default() -> Self {
         Config {
-            api_base_url: "https://platform.stepfun.com/v1".to_string(),
+            api_base_url: "https://api.stepfun.com/v1".to_string(),
             api_key: String::new(),
             model: "step-3.7-flash".to_string(),
             // 512 (not 300) so models that emit a hidden "thinking" pass before

@@ -267,22 +267,6 @@ fn capture_active_window_xcap(quality: Quality) -> Result<CapturedImage> {
     })
 }
 
-/// System/overlay window owners that sit in front but aren't the user's content.
-const SKIP_APPS: &[&str] = &[
-    "peeky",
-    "window server",
-    "dock",
-    "control cent",
-    "systemuiserver",
-    "notification cent",
-    "spotlight",
-    "screenshot",
-    "wallpaper",
-    "coreautha",
-    "universalcontrol",
-    "textinputmenuagent",
-];
-
 /// Frontmost "real" application window, NOT one of Peeky's own.
 ///
 /// PERFORMANCE: every `xcap::Window` getter re-enumerates the whole window
@@ -291,6 +275,11 @@ const SKIP_APPS: &[&str] = &[
 /// first non-system, non-Peeky window and call at most ONE getter (`app_name`)
 /// per candidate — typically 1-2 total. Returns `None` (→ full-screen fallback)
 /// if nothing suitable is near the front.
+///
+/// The skip-list itself lives in `platform::skip_apps` so it can be shared
+/// across `focused_window` / `frontmost_app_name` and across both macOS and
+/// Windows (system/overlay process names are platform-specific — see
+/// `platform/skip_apps.rs` for the union list).
 #[cfg(not(target_os = "macos"))]
 fn focused_window() -> Option<Window> {
     let windows = Window::all().ok()?;
@@ -299,8 +288,7 @@ fn focused_window() -> Option<Window> {
         if name.is_empty() {
             continue;
         }
-        let lname = name.to_ascii_lowercase();
-        if SKIP_APPS.iter().any(|s| lname.contains(s)) {
+        if crate::platform::is_overlay_or_system_window(&name) {
             continue;
         }
         return Some(w);
@@ -324,8 +312,7 @@ pub fn frontmost_app_name() -> String {
         if name.is_empty() {
             continue;
         }
-        let lname = name.to_ascii_lowercase();
-        if SKIP_APPS.iter().any(|s| lname.contains(s)) {
+        if crate::platform::is_overlay_or_system_window(&name) {
             continue;
         }
         return name;

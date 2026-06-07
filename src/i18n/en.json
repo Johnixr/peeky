@@ -34,21 +34,21 @@
   "settings.history.cleared": "Cleared",
 
   "error.config_incomplete": "Set your API Base URL, key, and model name in settings first (Ctrl+Shift+S).",
-  "error.capture": "Couldn't capture the screen — grant Screen Recording permission in System Settings.",
+  "error.capture": "Couldn't capture the screen — make sure screen capture is allowed for Peeky (you may be prompted on first use).",
   "error.api": "Model request failed",
   "error.empty_response": "The model returned an empty reply — try raising max tokens (some models force a hidden \"thinking\" mode that eats the budget).",
   "error.agent_limit": "Reached the action-step limit — stopping.",
   "error.tool_blocked": "Action blocked",
-  "error.screen_permission": "Screen Recording permission is required to capture — enable Peeky in System Settings › Privacy & Security › Screen Recording, then restart the app.",
+  "error.screen_permission": "Screen capture is required. On macOS: enable Peeky in System Settings → Privacy & Security → Screen Recording. On Windows: allow the system capture prompt, then relaunch Peeky.",
 
-  "settings.screenperm.label": "Screen Recording",
-  "settings.screenperm.hint": "Peeky needs this to see your screen. After granting it you usually have to restart the app.",
+  "settings.screenperm.label": "Screen capture",
+  "settings.screenperm.hint": "Peeky needs screen capture permission to see your screen. A restart is usually required for the grant to take effect.",
   "settings.screenperm.granted": "Granted",
   "settings.screenperm.denied": "Not granted",
   "settings.screenperm.grant": "Grant…",
   "settings.screenperm.recheck": "Re-check",
-  "settings.screenperm.black": "Granted, but capture is black — quit & reopen Peeky",
-  "error.screen_black": "Capture is black — Screen Recording permission usually needs a full quit & restart of Peeky to take effect (especially flaky in dev mode; test with the built app).",
+  "settings.screenperm.black": "Permission granted but capture is blank — please quit and relaunch Peeky.",
+  "error.screen_black": "Capture is blank — screen capture access may need a full app restart to take effect.",
 
   "status.thinking": "Thinking…",
   "status.reading": "Reading the screen…",
@@ -64,7 +64,7 @@
   "capture.hint": "Drag to select a region · Esc to cancel",
 
   "settings.baseUrl.label": "Base URL",
-  "settings.baseUrl.placeholder": "https://platform.stepfun.com/v1",
+  "settings.baseUrl.placeholder": "https://api.stepfun.com/v1",
   "settings.baseUrl.hint": "Any OpenAI-compatible endpoint (cloud, self-hosted, or local).",
   "settings.baseUrl.required": "Base URL is required.",
 
@@ -111,7 +111,7 @@
   "settings.quietHours.hint": "During this window Peeky stays quiet. May wrap past midnight.",
 
   "settings.followDnd.label": "Follow system Do Not Disturb",
-  "settings.followDnd.hint": "When macOS Focus / DND is on, Peeky stays quiet automatically.",
+  "settings.followDnd.hint": "When your system's Focus / Do-Not-Disturb is on, Peeky stays quiet automatically.",
 
   "settings.screenshotQuality.label": "Screenshot quality",
   "settings.screenshotQuality.hint": "Higher quality improves recognition but uses more tokens.",

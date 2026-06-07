@@ -24,8 +24,6 @@
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "shadow": false,
-        "titleBarStyle": "Transparent",
-        "hiddenTitle": true,
         "fullscreen": false,
         "center": false
       },
@@ -70,10 +68,10 @@
   "plugins": {},
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": ["app", "dmg", "nsis", "msi"],
     "category": "Productivity",
     "shortDescription": "A transparent floating desktop AI companion.",
-    "longDescription": "Peeky is a transparent floating macOS desktop AI companion that watches your screen and speaks at the right moments.",
+    "longDescription": "Peeky is a transparent floating desktop AI companion (macOS / Windows) that watches your screen and speaks at the right moments.",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -83,6 +81,12 @@
     ],
     "macOS": {
       "minimumSystemVersion": "11.0"
+    },
+    "windows": {
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "wix": {},
+      "nsis": {}
     }
   }
 }

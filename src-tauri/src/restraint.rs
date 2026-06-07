@@ -6,7 +6,7 @@
 //!     (`Config::speech_budget_per_hour`, default 6). Over budget → stay silent
 //!     and let it accumulate for the next window.
 //!   * **Quiet hours** — a user-defined `HH:MM`–`HH:MM` window (overnight-aware).
-//!   * **Follow macOS Focus / DND** — best-effort read of the system focus /
+//!   * **Follow system Focus / DND** — best-effort read of the system focus /
 //!     do-not-disturb state; when the system is in DND, the mascot shuts up.
 //!     If the state can't be read, it's treated as "not in DND" (fail-open to
 //!     speaking is wrong here — but per PRD we only *add* restraint when we're
@@ -25,8 +25,10 @@
 //! Timekeeping uses `chrono::Local::now()` throughout (PRD note).
 
 use std::collections::VecDeque;
-use std::process::Command;
 use std::time::{Duration, Instant};
+
+#[cfg(target_os = "macos")]
+use std::process::Command;
 
 use chrono::{Local, NaiveTime, Timelike};
 
@@ -47,10 +49,19 @@ const DND_CACHE_TTL: Duration = Duration::from_secs(10);
 /// App-name fragments (lowercased) that mean "the user is in a meeting or
 /// presenting — do not interrupt" (PRD §4.1). Matched as substrings against the
 /// frontmost app name from [`AppContext`].
+///
+/// Cross-platform: the macOS-specific entries (`keynote`, `quicktime player`)
+/// are harmless on Windows because substring matching only flags positives,
+/// never negatives, and these names are unique to macOS. Windows entries
+/// (`powerpoint`, `wpp`, `wps presentation`, `impress`, `vlc`, `zoom.exe`,
+/// `teams.exe`) are what the model actually needs to catch on that OS.
 const MEETING_APP_FRAGMENTS: &[&str] = &[
+    // Cross-platform
     "zoom",
+    "zoom.exe",
     "microsoft teams",
     "teams",
+    "teams.exe",
     "腾讯会议",
     "tencent meeting",
     "wemeet",
@@ -59,10 +70,17 @@ const MEETING_APP_FRAGMENTS: &[&str] = &[
     "feishu meeting",
     "飞书会议",
     "lark",
-    "keynote",
+    // Presentations
+    "keynote", // macOS-only
+    "powerpoint",
     "powerpoint slide show",
+    "wpp", // WPS Presentation on Windows
+    "wps presentation",
+    "impress", // LibreOffice
     "slideshow",
-    "quicktime player", // fullscreen video playback
+    // Fullscreen video / playback
+    "quicktime player", // macOS-only
+    "vlc",
 ];
 
 /// The core restraint state machine. One instance lives behind a mutex in
@@ -113,7 +131,7 @@ impl RestraintEngine {
             return false;
         }
 
-        // 3) Follow macOS Focus / DND.
+        // 3) Follow system Focus / DND (macOS Focus, Windows Focus Assist).
         if cfg.follow_system_dnd && self.system_dnd_active(now) {
             return false;
         }
@@ -192,7 +210,7 @@ impl RestraintEngine {
         Some(cooldown)
     }
 
-    /// Best-effort read of the macOS Focus / Do-Not-Disturb state, cached for a
+    /// Best-effort read of the system Focus / Do-Not-Disturb state, cached for a
     /// few seconds. Returns `false` (not in DND) on any failure — we only ever
     /// *add* restraint when we're confident the system is in DND.
     fn system_dnd_active(&mut self, now: Instant) -> bool {
@@ -270,13 +288,18 @@ fn is_meeting_or_fullscreen(ctx: &AppContext) -> bool {
     false
 }
 
-/// Best-effort probe of macOS Focus / Do-Not-Disturb. Several macOS versions
-/// store this differently and Apple has changed it across releases, so we try a
-/// couple of cheap `defaults`-based reads and bail to `false` on anything we
-/// can't confidently interpret. Never panics; never blocks long.
+/// Best-effort probe of the system's Focus / Do-Not-Disturb state. On macOS
+/// we shell out to `defaults` (cheap, no extra dependencies); on Windows we
+/// return `false` in v1 because the Focus Assist state lives in a deeply
+/// nested `HKCU\Software\Microsoft\Windows\CurrentVersion\CloudStore\…\Value`
+/// registry key that requires the `winreg` crate to read. The
+/// `follow_system_dnd` user toggle is preserved across platforms — the
+/// setting just has no automatic effect on Windows until the registry read
+/// is wired up (TODO `peeky-windows-2`).
 ///
-/// TODO(P1): replace the shell heuristics with a proper NSWorkspace / Focus
-/// status read once a stable cross-version API path is settled (PRD §4.1).
+/// We only ever *add* restraint when we're confident the system is in DND:
+/// a non-readable state is treated as "not in DND" so a flaky probe never
+/// permanently mutes the mascot.
 #[cfg(target_os = "macos")]
 fn probe_system_dnd() -> bool {
     // Newer macOS (Monterey+) keeps Focus state under the Notification Center

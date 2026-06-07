@@ -20,6 +20,7 @@ pub mod settings;
 pub mod state;
 pub mod tools;
 pub mod trigger;
+pub mod platform;
 pub mod types;
 
 use std::time::Duration;
@@ -95,6 +96,7 @@ pub fn run() {
             commands::region_submit,
             commands::region_cancel,
             commands::screen_capture_status,
+            commands::screen_capture_health,
             commands::request_screen_capture,
             commands::open_screen_settings,
             commands::set_overlay_interactive,
@@ -106,7 +108,7 @@ pub fn run() {
                 main_loop(handle).await;
             });
 
-            // Pre-warm the static context (scutil ComputerName) off the hot path,
+            // Pre-warm the static context (computer name) off the hot path,
             // so the first quick-shot doesn't pay it at submit time.
             tauri::async_runtime::spawn(async {
                 let _ = tauri::async_runtime::spawn_blocking(|| {
@@ -262,20 +264,20 @@ pub async fn run_trigger_now<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> any
 /// Build the runtime context string handed to the quick prompts. The static
 /// parts (user / computer / OS) are resolved once and cached; only the local
 /// time and active-app name are recomputed per call (kept cheap — speed matters).
+///
+/// Cross-platform: `USER` is a POSIX env var so it's also populated by
+/// Git-Bash / WSL on Windows (where the mascot may legitimately be running
+/// inside a WSL distribution); on a stock Windows host it will be empty
+/// and we just skip that segment. The OS label and computer name are
+/// resolved via the `platform::system` module so neither of them bakes
+/// macOS-only shell-outs in.
 fn system_context(active_app: &str) -> String {
     use std::sync::OnceLock;
     static STATIC_CTX: OnceLock<String> = OnceLock::new();
     let stat = STATIC_CTX.get_or_init(|| {
         let user = std::env::var("USER").unwrap_or_default();
-        let computer = std::process::Command::new("scutil")
-            .arg("--get")
-            .arg("ComputerName")
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_default();
+        let computer = crate::platform::system::computer_name();
+        let os = crate::platform::system::os_label();
         let mut parts = Vec::new();
         if !user.is_empty() {
             parts.push(format!("user {user}"));
@@ -283,7 +285,7 @@ fn system_context(active_app: &str) -> String {
         if !computer.is_empty() {
             parts.push(format!("computer \"{computer}\""));
         }
-        parts.push("OS macOS".to_string());
+        parts.push(format!("OS {os}"));
         parts.join(", ")
     });
     let time = chrono::Local::now().format("%Y-%m-%d %H:%M").to_string();

@@ -226,16 +226,33 @@ pub fn region_cancel<R: Runtime>(app: AppHandle<R>) {
 }
 
 /// Screen Recording health for the settings panel. `authorized` = the TCC toggle
-/// (CGPreflight); `working` = a fresh capture actually returns real (non-black)
-/// pixels. They diverge in the common "granted but still black until restart"
-/// case, so the UI must show `working`, not just `authorized`.
+/// (CGPreflight on macOS, the system capture prompt on Windows); `working` = a
+/// fresh capture actually returns real (non-black) pixels. They diverge in the
+/// common "granted but still black until restart" case, so the UI must show
+/// `working`, not just `authorized`. `settings_open_supported` tells the
+/// frontend whether the "Open System Settings → Screen Recording" button has a
+/// destination — true on macOS, false on Windows (no per-app toggle exists).
 #[tauri::command]
-pub fn screen_capture_status() -> serde_json::Value {
+pub fn screen_capture_health() -> serde_json::Value {
     let authorized = crate::permission::screen_capture_authorized();
     // Only probe when authorized — if not, it's black anyway, and the probe
     // itself could trip a permission prompt.
     let working = authorized && !crate::capture::capture_is_black();
-    serde_json::json!({ "authorized": authorized, "working": working })
+    let settings_open_supported = cfg!(target_os = "macos");
+    serde_json::json!({
+        "authorized": authorized,
+        "working": working,
+        "settings_open_supported": settings_open_supported,
+    })
+}
+
+/// Backwards-compatible alias for `screen_capture_health`. Older frontends
+/// call this name; we add the new `settings_open_supported` field on top so
+/// they degrade gracefully (the field is simply ignored if the UI doesn't
+/// read it).
+#[tauri::command]
+pub fn screen_capture_status() -> serde_json::Value {
+    screen_capture_health()
 }
 
 /// Trigger the one-time system Screen Recording prompt (effective only on first

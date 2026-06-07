@@ -34,21 +34,21 @@
   "settings.history.cleared": "已清空",
 
   "error.config_incomplete": "请先在设置里填写 API 地址、密钥和模型名（Ctrl+Shift+S）。",
-  "error.capture": "无法截屏——请在系统设置里授予「屏幕录制」权限。",
+  "error.capture": "无法截屏——请允许 Peeky 截取屏幕(首次使用时会弹出系统询问)。",
   "error.api": "模型请求失败",
   "error.empty_response": "模型返回了空内容——试试调高 max tokens（有些模型会强制隐藏的「思考」过程，把预算吃光）。",
   "error.agent_limit": "已达操作步数上限，已停止。",
   "error.tool_blocked": "操作被拦截",
-  "error.screen_permission": "需要「屏幕录制」权限才能截图——请在 系统设置 › 隐私与安全性 › 屏幕录制 中勾选 Peeky，然后重启应用。",
+  "error.screen_permission": "需要屏幕录制权限。macOS:请在 系统设置 → 隐私与安全性 → 屏幕录制 中启用 Peeky;Windows:请在弹出的系统授权框中允许,然后重启 Peeky。",
 
-  "settings.screenperm.label": "屏幕录制权限",
-  "settings.screenperm.hint": "Peeky 需要此权限才能看到你的屏幕。授权后通常要重启应用才生效。",
+  "settings.screenperm.label": "屏幕录制",
+  "settings.screenperm.hint": "Peeky 需要屏幕录制权限才能看到你的屏幕,授予后通常需要重启应用才会生效。",
   "settings.screenperm.granted": "已授权",
   "settings.screenperm.denied": "未授权",
   "settings.screenperm.grant": "去授权…",
   "settings.screenperm.recheck": "重新检测",
-  "settings.screenperm.black": "已授权但截图是黑屏——请彻底退出并重启 Peeky",
-  "error.screen_black": "截到的是黑屏——屏幕录制权限通常要彻底退出并重启 Peeky 才会生效（开发模式下尤其不稳定，建议用打包后的 App 测试）。",
+  "settings.screenperm.black": "已授权但截屏是空白——请完全退出后重启 Peeky。",
+  "error.screen_black": "截屏是空白——通常需要彻底退出并重启 Peeky 权限才会生效。",
 
   "status.thinking": "思考中…",
   "status.reading": "正在读取屏幕…",
@@ -64,7 +64,7 @@
   "capture.hint": "按住拖动选择区域 · Esc 取消",
 
   "settings.baseUrl.label": "Base URL",
-  "settings.baseUrl.placeholder": "https://platform.stepfun.com/v1",
+  "settings.baseUrl.placeholder": "https://api.stepfun.com/v1",
   "settings.baseUrl.hint": "任意兼容 OpenAI 协议的端点（云端 / 私有化 / 本地）。",
   "settings.baseUrl.required": "Base URL 为必填项。",
 
@@ -111,7 +111,7 @@
   "settings.quietHours.hint": "在此时间段内 Peeky 保持安静，可跨午夜。",
 
   "settings.followDnd.label": "跟随系统勿扰",
-  "settings.followDnd.hint": "当 macOS 专注 / 勿扰开启时，Peeky 自动闭嘴。",
+  "settings.followDnd.hint": "当系统进入专注 / 勿扰模式时,Peeky 会自动闭嘴。",
 
   "settings.screenshotQuality.label": "截屏质量",
   "settings.screenshotQuality.hint": "质量越高识别越准，但消耗的 token 也越多。",

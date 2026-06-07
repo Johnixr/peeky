@@ -63,7 +63,7 @@ interface HistoryItem {
 /** Sensible client-side fallback mirroring Config::default() in types.rs. */
 function defaultConfig(): Config {
   return {
-    api_base_url: "https://platform.stepfun.com/v1",
+    api_base_url: "https://api.stepfun.com/v1",
     api_key: "",
     model: "step-3.7-flash",
     max_tokens: 300,
@@ -621,14 +621,18 @@ export function mountSettings(root: HTMLElement, opts: MountOptions = {}): Setti
     async function refreshPerm(): Promise<void> {
       let authorized = false;
       let working = false;
+      let settingsOpenSupported = false;
       try {
-        const st = await invoke<{ authorized?: boolean; working?: boolean }>(
-          "screen_capture_status",
-        );
+        const st = await invoke<{
+          authorized?: boolean;
+          working?: boolean;
+          settings_open_supported?: boolean;
+        }>("screen_capture_health");
         authorized = !!st?.authorized;
         working = !!st?.working;
+        settingsOpenSupported = !!st?.settings_open_supported;
       } catch {
-        /* outside Tauri / not macOS: leave as denied-unknown */
+        /* outside Tauri: leave as denied-unknown */
       }
       // Three states: working / granted-but-black (needs restart) / not granted.
       if (working) {
@@ -640,9 +644,12 @@ export function mountSettings(root: HTMLElement, opts: MountOptions = {}): Setti
       }
       permStatus.classList.toggle("peeky-perm-ok", working);
       permStatus.classList.toggle("peeky-perm-bad", !working);
-      // Only offer "Grant…" when not even authorized; the black case needs a
-      // restart, not another grant.
-      permGrant.style.display = authorized ? "none" : "";
+      // Only offer "Grant…" when not even authorized AND the host has a
+      // system-settings pane we can route to. On Windows there is no
+      // per-app screen-capture toggle (the grant is a one-shot modal), so
+      // we hide the button entirely — clicking it would lead nowhere.
+      permGrant.style.display =
+        authorized || !settingsOpenSupported ? "none" : "";
     }
     permGrant.addEventListener("click", async () => {
       // Trigger the one-time system prompt, then open the pane for the toggle.

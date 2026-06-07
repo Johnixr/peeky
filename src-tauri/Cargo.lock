@@ -3597,6 +3597,7 @@ dependencies = [
  "tauri-plugin-opener",
  "thiserror 2.0.18",
  "tokio",
+ "windows-sys 0.59.0",
  "xcap",
 ]
 

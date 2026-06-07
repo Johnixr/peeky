@@ -16,7 +16,7 @@ The idea: AI shouldn't only show up when you open a chat box. It should sit
 beside you like a friend, notice what you're doing, and help when it actually
 helps.
 
-> Platform: **macOS only** (Apple Silicon / Intel).
+> Platform: **macOS** (Apple Silicon / Intel) and **Windows 11**.
 
 ## Features
 
@@ -33,8 +33,8 @@ helps.
   - `Ctrl+Shift+E` — **Explain** the selection
   - `Ctrl+Shift+B` — **Ask** a typed question about it
   - `Ctrl+Shift+T` — **Translate** it + a short vocabulary note
-- **Restraint engine** — per-hour speech budget, quiet hours, follow macOS
-  Focus/DND, fullscreen auto-pause — so peeky never becomes Clippy.
+- **Restraint engine** — per-hour speech budget, quiet hours, follow system
+  Focus / Do-Not-Disturb, fullscreen auto-pause — so peeky never becomes Clippy.
 - **OpenAI-compatible streaming** — any `/chat/completions` endpoint (cloud,
   private, or local). Vision messages, SSE streaming, token accounting.
   **TLS is never disabled; keys are never hardcoded.**
@@ -45,13 +45,18 @@ helps.
 
 ## Run
 
-Prerequisites: macOS 11+, [Rust](https://rustup.rs), [pnpm](https://pnpm.io),
-Xcode command-line tools.
+Prerequisites:
+
+- **macOS**: macOS 11+, [Rust](https://rustup.rs) (stable), [pnpm](https://pnpm.io),
+  Xcode command-line tools.
+- **Windows 11**: [Rust](https://rustup.rs) (stable, ≥ 1.85), [pnpm](https://pnpm.io),
+  Visual Studio Build Tools (C++ workload), WebView2 runtime (preinstalled on
+  Windows 11).
 
 ```sh
 pnpm install
 pnpm tauri dev      # dev build (image ops are slower in debug)
-pnpm tauri build    # production .app / .dmg
+pnpm tauri build    # production .app / .dmg  (macOS)  ·  .exe / NSIS / .msi  (Windows)
 ```
 
 ### macOS permissions
@@ -65,10 +70,17 @@ Privacy & Security**, then quit and reopen it.
 > Build with a real Apple Development signature so the grant sticks:
 > `APPLE_SIGNING_IDENTITY="<your identity>" pnpm tauri build`.
 
+### Windows permissions
+
+Windows has **no per-app Screen Recording toggle** — the first screen capture
+inside peeky triggers a **system-level** capture consent prompt. Accept it
+once; peeky then captures normally. If a frame ever comes back blank, fully
+quit and relaunch peeky (DWM quirk on some adapters).
+
 ### Configure the model
 
 Open settings (gear on hover, or `Ctrl+Shift+S`) and set **Base URL**, **API
-Key**, **Model** (e.g. `https://platform.stepfun.com/v1` / `step-3.7-flash`).
+Key**, **Model** (e.g. `https://api.stepfun.com/v1` / `step-3.7-flash`).
 The key can instead come from the `PEEKY_API_KEY` env var (see `.env.example`) —
 **keys are never committed.** Use **Test connection** to verify.
 

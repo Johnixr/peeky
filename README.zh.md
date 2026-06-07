@@ -2,7 +2,8 @@
 
 [English](./README.md) · 简体中文
 
-> 一只透明悬浮的 **macOS 桌面 AI 小精灵**——探头看你的屏幕，在恰当的时机开口。
+> 一只透明悬浮的 **桌面 AI 小精灵**（macOS / Windows 11）——探头看你的屏幕，
+> 在恰当的时机开口。
 
 peeky 用 [Tauri 2](https://tauri.app) 构建：Rust 后端（`src-tauri/`）+ 原生
 TypeScript + Vite 的 webview 前端（`src/`）。它是一只可拖拽、无窗口边框的小角色，
@@ -12,7 +13,7 @@ TypeScript + Vite 的 webview 前端（`src/`）。它是一只可拖拽、无�
 核心理念：AI 不该只在你打开聊天框、敲下提示词时才出现。它该像朋友一样坐在你旁边，
 留意你在做什么，在真正有用的时候搭把手。
 
-> 平台：**仅 macOS**（Apple Silicon / Intel）。
+> 平台：**macOS**（Apple Silicon / Intel）和 **Windows 11**。
 
 ## 功能
 
@@ -26,7 +27,7 @@ TypeScript + Vite 的 webview 前端（`src/`）。它是一只可拖拽、无�
   - `Ctrl+Shift+E` —— **讲解**所选内容
   - `Ctrl+Shift+B` —— 对它**提问**（输入文字）
   - `Ctrl+Shift+T` —— **翻译** + 简短生词讲解
-- **克制引擎** —— 每小时发言预算、安静时段、跟随 macOS 专注/勿扰、全屏自动暂停——
+- **克制引擎** —— 每小时发言预算、安静时段、跟随系统专注 / 勿扰、全屏自动暂停——
   让 peeky 永远不会变成"大眼夹"。
 - **OpenAI 兼容流式** —— 任意 `/chat/completions` 端点（云端 / 私有 / 本地）。
   视觉消息、SSE 流式、Token 计量。**绝不关闭 TLS 校验，绝不硬编码密钥。**
@@ -36,12 +37,17 @@ TypeScript + Vite 的 webview 前端（`src/`）。它是一只可拖拽、无�
 
 ## 运行
 
-前置：macOS 11+、[Rust](https://rustup.rs)、[pnpm](https://pnpm.io)、Xcode 命令行工具。
+前置：
+
+- **macOS**：macOS 11+、[Rust](https://rustup.rs)（stable）、[pnpm](https://pnpm.io)、
+  Xcode 命令行工具。
+- **Windows 11**：[Rust](https://rustup.rs)（stable，≥ 1.85）、[pnpm](https://pnpm.io)、
+  Visual Studio Build Tools（C++ 工作负载）、WebView2 运行时（Windows 11 自带）。
 
 ```sh
 pnpm install
 pnpm tauri dev      # 开发构建（debug 下图像处理较慢）
-pnpm tauri build    # 生产 .app / .dmg
+pnpm tauri build    # 生产 .app / .dmg  （macOS）·  .exe / NSIS / .msi  （Windows）
 ```
 
 ### macOS 权限
@@ -53,10 +59,16 @@ pnpm tauri build    # 生产 .app / .dmg
 > 构建可能"已授权"却仍截到黑屏。请用正式的 Apple 开发者签名构建，授权才会在重新
 > 构建后依然有效：`APPLE_SIGNING_IDENTITY="<你的签名>" pnpm tauri build`。
 
+### Windows 权限
+
+Windows **没有 per-app 的"屏幕录制"开关**——peeky 第一次截图时会弹出**系统级**的
+捕获授权框，同意一次后即可。如果偶尔截到空白画面，请完全退出并重新打开 peeky
+（部分显卡在 DWM 下的兼容问题）。
+
 ### 配置模型
 
 打开设置（悬停点齿轮，或 `Ctrl+Shift+S`），填写 **Base URL**、**API Key**、
-**模型**（例如 `https://platform.stepfun.com/v1` / `step-3.7-flash`）。
+**模型**（例如 `https://api.stepfun.com/v1` / `step-3.7-flash`）。
 密钥也可通过环境变量 `PEEKY_API_KEY` 提供（见 `.env.example`）——**密钥绝不入库**。
 用 **测试连接** 验证。
 

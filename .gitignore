@@ -37,3 +37,6 @@ yarn-error.log*
 
 # Internal product spec (private infra / contacts) — not for the public repo
 prd_screen_companion.md
+
+# Claude Code local settings (per-machine, not for the repo)
+.claude/settings.local.json

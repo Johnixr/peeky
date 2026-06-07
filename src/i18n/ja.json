@@ -34,21 +34,21 @@
   "settings.history.cleared": "消去しました",
 
   "error.config_incomplete": "まず設定で API のベースURL・キー・モデル名を入力してください（Ctrl+Shift+S）。",
-  "error.capture": "画面をキャプチャできません——システム設定で画面収録の権限を許可してください。",
+  "error.capture": "画面をキャプチャできません——Peeky の画面キャプチャを許可してください(初回使用时に确认が表示されます)。",
   "error.api": "モデルへのリクエストに失敗しました",
   "error.empty_response": "モデルが空の応答を返しました——max tokens を増やしてみてください（一部のモデルは隠れた「思考」モードでトークンを使い切ります）。",
   "error.agent_limit": "操作ステップ上限に達したため停止しました。",
   "error.tool_blocked": "操作がブロックされました",
-  "error.screen_permission": "スクリーンショットには「画面収録」の権限が必要です — システム設定 › プライバシーとセキュリティ › 画面収録 で Peeky を有効にし、アプリを再起動してください。",
+  "error.screen_permission": "画面キャプチャの許可が必要です。macOS: システム設定 → プライバシーとセキュリティ → 画面収録 で Peeky を有効化。Windows: 表示されたダイアログで許可し、Peeky を再起動してください。",
 
-  "settings.screenperm.label": "画面収録の権限",
-  "settings.screenperm.hint": "Peeky が画面を見るために必要です。許可後はアプリの再起動が必要な場合があります。",
+  "settings.screenperm.label": "画面キャプチャ",
+  "settings.screenperm.hint": "Peeky は画面を見るためにキャプチャ許可が必要です。許可はアプリを再起動してから有効になります。",
   "settings.screenperm.granted": "許可済み",
   "settings.screenperm.denied": "未許可",
   "settings.screenperm.grant": "許可する…",
   "settings.screenperm.recheck": "再確認",
-  "settings.screenperm.black": "許可済みですが画面が黒い — Peeky を完全に終了して再起動してください",
-  "error.screen_black": "画面が黒く映ります — 画面収録の権限は Peeky を完全に終了して再起動しないと有効にならないことがあります（開発モードでは特に不安定。ビルド済みアプリでの確認を推奨）。",
+  "settings.screenperm.black": "許可済みですが画面が空白です——Peeky を完全に終了して再起動してください。",
+  "error.screen_black": "画面が空白です——完全に終了して Peeky を再起動すると権限が反映されます。",
 
   "status.thinking": "考え中…",
   "status.reading": "画面を確認中…",
@@ -64,7 +64,7 @@
   "capture.hint": "ドラッグで範囲を選択 · Esc でキャンセル",
 
   "settings.baseUrl.label": "Base URL",
-  "settings.baseUrl.placeholder": "https://platform.stepfun.com/v1",
+  "settings.baseUrl.placeholder": "https://api.stepfun.com/v1",
   "settings.baseUrl.hint": "OpenAI 互換のエンドポイントなら何でも（クラウド / 自前ホスト / ローカル）。",
   "settings.baseUrl.required": "Base URL は必須です。",
 
@@ -111,7 +111,7 @@
   "settings.quietHours.hint": "この時間帯は Peeky は静かにします。深夜をまたいでも構いません。",
 
   "settings.followDnd.label": "システムのおやすみモードに従う",
-  "settings.followDnd.hint": "macOS の集中モード / おやすみモード中は Peeky が自動で静かになります。",
+  "settings.followDnd.hint": "システムのおやすみモード / 集中モードが有効なとき、Peeky は自動で静かになります。",
 
   "settings.screenshotQuality.label": "スクリーンショット品質",
   "settings.screenshotQuality.hint": "品質が高いほど認識精度が上がりますが、トークン消費も増えます。",

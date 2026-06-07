@@ -35,7 +35,20 @@ mod imp {
 
 #[cfg(not(target_os = "macos"))]
 mod imp {
-    /// Non-macOS platforms don't gate screen capture this way.
+    /// Windows has no per-app "Screen Recording" toggle analogous to macOS
+    /// TCC. The OS instead surfaces a SYSTEM-level capture authorization
+    /// prompt the first time an app calls a screen-capture API
+    /// (e.g. `xcap::Monitor::capture_image` via DXGI Desktop Duplication or
+    /// Windows.Graphics.Capture). Once the user allows it, every subsequent
+    /// capture in the same process works without re-prompting — and because
+    /// the prompt is a one-shot modal, we cannot reliably query "is it
+    /// granted?" synchronously. The macOS `CGPreflightScreenCaptureAccess`
+    /// model simply doesn't apply.
+    ///
+    /// We therefore return `true` here and rely on `capture_is_black()` to
+    /// surface a clear "Permission granted but capture is blank — please
+    /// quit and relaunch Peeky" message in the settings panel when the OS
+    /// grant isn't yet effective for the running process.
     pub fn screen_capture_authorized() -> bool {
         true
     }

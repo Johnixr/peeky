@@ -1,23 +1,28 @@
 # Peeky — Architecture
 
-Peeky (探头看你屏幕的魔法小精灵) is a transparent floating macOS desktop AI
+Peeky (探头看你屏幕的魔法小精灵) is a transparent floating desktop AI
 companion built with **Tauri 2** — a Rust backend (`src-tauri/`) and a vanilla
 TypeScript + Vite webview frontend (`src/`). It periodically captures the
 screen, decides — cheaply — whether anything meaningful changed, and, when
 appropriate, asks an OpenAI-compatible model to say something through an
-animated floating mascot. macOS only this milestone.
+animated floating mascot. Runs on **macOS** (Apple Silicon / Intel) and
+**Windows 11** — see the *Platform support matrix* below.
 
 See `prd_screen_companion.md` for the full product spec.
 
 ## How to run
 
-Prereqs: macOS, Rust (stable), Node + **pnpm**, the Tauri CLI.
+Prereqs: macOS 11+ or Windows 11, Rust (stable, ≥ 1.85 — the lockfile pulls
+in `aligned 0.4.3` which uses `edition = "2024"`), Node + **pnpm**, the Tauri
+CLI. On Windows you also need the Visual Studio Build Tools (C++ workload)
+and the WebView2 runtime (preinstalled on Windows 11; the NSIS/MSI bundles
+install it otherwise).
 
 ```bash
 pnpm install                 # install frontend deps
 cp .env.example .env         # then set PEEKY_API_KEY (optional; can also be set in-app)
 pnpm tauri dev               # run the desktop app (starts Vite on :1420 + Rust)
-pnpm tauri build             # produce a macOS .app / .dmg
+pnpm tauri build             # produce a macOS .app / .dmg, or Windows .exe / .msi / NSIS
 ```
 
 - Frontend dev server: `http://localhost:1420` (Vite, `clearScreen: false`).
@@ -31,7 +36,8 @@ A background tokio task ticks every **500ms**. While not paused / not already
 speaking:
 
 1. **L0 event gate (zero cost)** — `trigger::front_app_context()` reads the
-   frontmost app / window title / browser URL via `osascript`.
+   frontmost app / window title / browser URL via the per-OS backend
+   (macOS: `osascript`; Windows: Win32 FFI in `platform::windows`).
 2. **L1 cheap pixel check** — `capture::capture_screen` → downsample to 128px →
    `capture::to_gray_128` → `trigger::TriggerEngine::evaluate`: pHash hamming +
    vertical cross-correlation scroll detection → `TriggerDecision`.
@@ -39,7 +45,8 @@ speaking:
    - `Meaningful` proceeds.
 3. **L2 debounce** — wait ~800ms of stability before committing.
 4. **Restraint** — `RestraintEngine::allow_speak` enforces speech budget/hour,
-   quiet hours, macOS DND, fullscreen/meeting pause, ignore-decay (PRD §4).
+   quiet hours, system Focus / DND, fullscreen/meeting pause, ignore-decay
+   (PRD §4).
 5. **Speak** — emit `scanning`→`thinking`, full-quality capture,
    `modes::build_messages(mode, lang, b64, memory)`, then
    `api::stream_chat` streaming tokens to the bubble. If the model returns the
@@ -66,6 +73,7 @@ Manual trigger (Ctrl+Shift+Space / `trigger_now`) bypasses restraint (PRD §4
 | `settings.rs` | `load_config`/`save_config`/`load_stats`/`save_stats`; `PEEKY_API_KEY` env overlay. |
 | `commands.rs` | `#[tauri::command]` functions exposed to the frontend. |
 | `lib.rs` | Module wiring, Tauri builder, global shortcuts, command registration, the 500ms main loop, event emission. |
+| `platform/` | Per-OS dispatch: `trigger/{macos,windows}.rs` (front-app / window title / browser URL), `system/{macos,windows}.rs` (computer name, OS label), `clipboard/{macos,windows}.rs` (paste-via-clipboard + `enigo` shortcut), `skip_apps.rs` (overlay/system process skip list). Compiled under `#[cfg(target_os = "…")]`; only one backend is ever linked into a given binary. |
 
 ## Tauri commands (JS → Rust)
 
@@ -100,7 +108,24 @@ Manual trigger (Ctrl+Shift+Space / `trigger_now`) bypasses restraint (PRD §4
 ## Window config (`tauri.conf.json`)
 
 One window, `360×420`, transparent, no decorations, always-on-top, non-resizable,
-skip-taskbar, `macOSPrivateApi: true`, `withGlobalTauri: true`.
+skip-taskbar, `withGlobalTauri: true`. Cross-platform `transparent / decorations
+/ alwaysOnTop / skipTaskbar` flags cover the macOS WKWebView and the Windows
+WebView2 paths; the macOS-only `titleBarStyle: "Transparent"` and
+`macOSPrivateApi` toggles are removed (not needed when the window is already
+decorationless on Windows).
+
+## Platform support matrix
+
+| Capability | macOS | Windows 11 |
+|---|---|---|
+| Transparent + always-on-top + click-through | ✓ (WKWebView) | ✓ (WebView2) |
+| Screen capture (xcap) | ✓ | ✓ (DWM; can return black on some adapters — `screen_capture_health` surfaces it) |
+| Frontmost app / window title | ✓ (AppleScript) | ✓ (Win32 FFI, `windows-sys 0.59`) |
+| Browser active URL | ✓ | ✗ in v1 (returns `None`; model uses window title) — `peeky-windows-1` |
+| Copilot click / type / key (enigo) | ✓ | ✓ |
+| Clipboard paste-and-restore | ✓ (`pbcopy` / `pbpaste` + `Cmd+V`) | ✓ (`clip.exe` + `Get-Clipboard` + `Ctrl+V`) |
+| System DND / Focus auto-pause | ✓ (Focus detection) | ✗ in v1 — `peeky-windows-2` |
+| Code-signed release build | `APPLE_SIGNING_IDENTITY=… pnpm tauri build` | `bundle.windows.certificateThumbprint` in `tauri.conf.json` (v1 ships unsigned) — `peeky-windows-3` |
 
 ## Security red-lines (PRD §1.5 / §3.3 / §11)
 

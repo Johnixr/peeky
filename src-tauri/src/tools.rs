@@ -317,10 +317,12 @@ pub fn click(target: ClickTarget) -> Result<()> {
 /// clipboard path is unavailable. Mid risk (PRD §3.2).
 pub fn type_text(text: &str) -> Result<()> {
     guard_intent(&format!("type text: {text}"))?;
-    // Preferred path: clipboard paste + restore (PRD §5.1 note). We use macOS
-    // `pbcopy`/`pbpaste` so we don't pull in an extra clipboard crate, and we
-    // restore the user's previous clipboard contents afterward.
-    if paste_via_clipboard(text).is_ok() {
+    // Preferred path: clipboard paste + restore (PRD §5.1 note). The per-OS
+    // implementation lives in `crate::platform::clipboard` — macOS uses
+    // `pbcopy`/`pbpaste` + `Cmd+V`, Windows uses `clip.exe`/PowerShell +
+    // `Ctrl+V`. On any platform the function returns Err and we fall through
+    // to the raw-keystroke path.
+    if crate::platform::paste_via_clipboard(text).is_ok() {
         return Ok(());
     }
     // Fallback: direct unicode keystrokes (may be unreliable with some IMEs).
@@ -363,56 +365,6 @@ pub fn key(combo: &str) -> Result<()> {
 fn new_enigo() -> Result<Enigo> {
     Enigo::new(&EnigoSettings::default())
         .map_err(|e| AppError::Other(anyhow::anyhow!("input backend unavailable: {e}")))
-}
-
-/// Clipboard paste + restore using macOS `pbcopy`/`pbpaste`. Saves the current
-/// clipboard, copies `text`, simulates Cmd+V, then restores the original.
-fn paste_via_clipboard(text: &str) -> Result<()> {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
-    // 1. Save current clipboard (best-effort; empty on failure).
-    let saved = Command::new("pbpaste")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .unwrap_or_default();
-
-    // 2. Put our text on the clipboard.
-    let mut child = Command::new("pbcopy")
-        .stdin(Stdio::piped())
-        .spawn()
-        .map_err(AppError::Io)?;
-    child
-        .stdin
-        .as_mut()
-        .ok_or_else(|| AppError::Other(anyhow::anyhow!("pbcopy stdin unavailable")))?
-        .write_all(text.as_bytes())
-        .map_err(AppError::Io)?;
-    child.wait().map_err(AppError::Io)?;
-
-    // 3. Simulate Cmd+V.
-    {
-        let mut enigo = new_enigo()?;
-        enigo
-            .key(enigo::Key::Meta, Direction::Press)
-            .map_err(|e| AppError::Other(anyhow::anyhow!("cmd press failed: {e}")))?;
-        let v = enigo.key(enigo::Key::Unicode('v'), Direction::Click);
-        let _ = enigo.key(enigo::Key::Meta, Direction::Release);
-        v.map_err(|e| AppError::Other(anyhow::anyhow!("paste key failed: {e}")))?;
-    }
-
-    // 4. Give the target app a moment to read the pasteboard, then restore.
-    thread::sleep(Duration::from_millis(80));
-    let mut restore = Command::new("pbcopy")
-        .stdin(Stdio::piped())
-        .spawn()
-        .map_err(AppError::Io)?;
-    if let Some(stdin) = restore.stdin.as_mut() {
-        let _ = stdin.write_all(saved.as_bytes());
-    }
-    let _ = restore.wait();
-    Ok(())
 }
 
 /// Parse a "Mod+Mod+Key" combo into (modifier keys, main key) for enigo.

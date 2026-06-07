@@ -2,8 +2,8 @@
 //!
 //! Design rule from the PRD: **use the cheapest signal that can decide.** Never
 //! call a model here, never run OCR. Everything in this module is pure integer /
-//! float math over a tiny 128×128 grayscale frame, plus a zero-cost `osascript`
-//! probe for the foreground app context.
+//! float math over a tiny 128×128 grayscale frame, plus a zero-cost probe for
+//! the foreground app context (delegated to the per-OS `platform::trigger`).
 //!
 //! The pipeline this module implements:
 //!   1. Perceptual hash (DCT-based pHash) of the whole 128px frame.
@@ -15,15 +15,17 @@
 //!   4. Otherwise, decide NoChange vs Meaningful by comparing the hamming
 //!      distance against a sensitivity-derived threshold.
 //!
-//! `front_app_context()` is the L0 event-driven gate: it shells out to
-//! `osascript` to read the frontmost app + focused window title (and a
-//! best-effort browser tab URL). It is best-effort and never panics.
-
-use std::process::Command;
+//! `front_app_context()` is the L0 event-driven gate: it reads the frontmost
+//! app + focused window title (and a best-effort browser tab URL on macOS).
+//! Backed by `platform::trigger::{macos,windows}` — see `src-tauri/src/platform/`.
 
 use image::GrayImage;
 
-use crate::types::{AppContext, TriggerDecision};
+use crate::types::TriggerDecision;
+
+// Re-export the per-OS front-app context helpers so existing callers can keep
+// using `trigger::front_app_context()` / `trigger::frontmost_app_name()`.
+pub use crate::platform::trigger::{front_app_context, frontmost_app_name};
 
 /// Side length of the working frame. The main loop hands us a 128×128 grayscale
 /// image (see `capture::to_gray_128`); we hard-code the assumption but defend
@@ -389,134 +391,6 @@ fn strip_diff(
     }
 }
 
-// ---- L0 event-driven gate: foreground app context (zero model cost) ---------
-
-/// Read the frontmost application, its focused window title, and (for known
-/// browsers) a best-effort current tab URL — all via `osascript`. This is the
-/// L0 gate from PRD §2.2: free, instant, and the primary "did the context
-/// actually change?" signal.
-///
-/// Best-effort and **never panics**: any failure (no permission, AppleScript
-/// error, non-UTF8 output) degrades to whatever fields we managed to read,
-/// down to an empty `AppContext`.
-pub fn front_app_context() -> AppContext {
-    let app = frontmost_app_name();
-    let title = focused_window_title(&app);
-    let url = if is_browser(&app) {
-        browser_active_url(&app)
-    } else {
-        None
-    };
-
-    AppContext { app, title, url }
-}
-
-/// Run a small AppleScript and return its trimmed stdout, or `None` on any error
-/// (including a non-zero exit, which AppleScript uses for permission failures).
-fn run_osascript(script: &str) -> Option<String> {
-    let output = Command::new("osascript").arg("-e").arg(script).output().ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
-}
-
-/// Name of the frontmost application (e.g. "Safari", "Code").
-///
-/// This is the ACCURATE source (System Events `frontmost is true`), unlike the
-/// xcap window-order heuristic which can pick a menu-bar agent. It costs one
-/// `osascript` (~100-300ms), so callers on the interactive path run it
-/// concurrently with the screen capture rather than before it.
-pub fn frontmost_app_name() -> String {
-    run_osascript(
-        r#"tell application "System Events" to get name of first application process whose frontmost is true"#,
-    )
-    .unwrap_or_default()
-}
-
-/// Title of the focused window of the given frontmost app. Requires Accessibility
-/// permission; degrades to empty string when unavailable.
-fn focused_window_title(app: &str) -> String {
-    if app.is_empty() {
-        return String::new();
-    }
-    // Ask System Events for the frontmost process's front window title. We scope
-    // by the known app name to avoid races where focus shifts mid-script.
-    let script = format!(
-        r#"tell application "System Events"
-    try
-        tell process "{app}"
-            return value of attribute "AXTitle" of front window
-        end tell
-    on error
-        return ""
-    end try
-end tell"#,
-        app = escape_applescript(app),
-    );
-    run_osascript(&script).unwrap_or_default()
-}
-
-/// Whether the app is a browser we know how to query for a tab URL.
-fn is_browser(app: &str) -> bool {
-    matches!(
-        app,
-        "Safari"
-            | "Safari Technology Preview"
-            | "Google Chrome"
-            | "Google Chrome Canary"
-            | "Chromium"
-            | "Brave Browser"
-            | "Microsoft Edge"
-            | "Arc"
-            | "Vivaldi"
-            | "Opera"
-    )
-}
-
-/// Best-effort current-tab URL for a known browser. Safari and the Chromium
-/// family expose slightly different AppleScript dictionaries, so we branch.
-fn browser_active_url(app: &str) -> Option<String> {
-    let esc = escape_applescript(app);
-    let script = if app.starts_with("Safari") {
-        format!(
-            r#"tell application "{app}"
-    try
-        return URL of front document
-    on error
-        return ""
-    end try
-end tell"#,
-            app = esc,
-        )
-    } else {
-        // Chromium-family dictionary: active tab of the front window.
-        format!(
-            r#"tell application "{app}"
-    try
-        return URL of active tab of front window
-    on error
-        return ""
-    end try
-end tell"#,
-            app = esc,
-        )
-    };
-    run_osascript(&script)
-}
-
-/// Escape a string for safe inclusion inside an AppleScript double-quoted
-/// literal. App names are tame, but we defend against quotes/backslashes anyway
-/// so we can never inject or break the script.
-fn escape_applescript(s: &str) -> String {
-    s.replace('\\', r"\\").replace('"', r#"\""#)
-}
-
 // ---- tests ------------------------------------------------------------------
 
 #[cfg(test)]
@@ -603,11 +477,6 @@ mod tests {
         use crate::types::Quality::*;
         assert!(sensitivity_threshold(High) < sensitivity_threshold(Med));
         assert!(sensitivity_threshold(Med) < sensitivity_threshold(Low));
-    }
-
-    #[test]
-    fn escape_applescript_neutralizes_quotes() {
-        assert_eq!(escape_applescript(r#"a"b\c"#), r#"a\"b\\c"#);
     }
 
     #[test]
