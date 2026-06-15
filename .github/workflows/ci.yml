@@ -1,15 +1,17 @@
 name: CI
 
 on:
-  pull_request:
   push:
+    branches: [main, feature/ocr-ci-demo]
+  pull_request:
     branches: [main]
   workflow_dispatch:
 
 jobs:
   checks:
-    name: checks
+    name: Verify OCR runtime and tests
     runs-on: macos-latest
+
     steps:
       - uses: actions/checkout@v4
 
@@ -22,80 +24,19 @@ jobs:
           node-version: 20
           cache: pnpm
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
       - uses: dtolnay/rust-toolchain@stable
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Install PaddleOCR
+      - name: Install OCR runtime
         run: |
           python -m pip install --upgrade pip
           python -m pip install paddlepaddle paddleocr
 
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Typecheck frontend
-        run: pnpm run typecheck
-
-      - name: Test Rust backend
-        working-directory: src-tauri
-        run: cargo test --locked
-
-      - name: Verify OCR runtime
-        run: pnpm run ci:ocr-runtime
-
-  package:
-    name: package app
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            artifact_glob: "src-tauri/target/release/bundle/**/*"
-          - os: windows-latest
-            artifact_glob: "src-tauri/target/release/bundle/**/*"
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build frontend
-        run: pnpm run build
-
-      - name: Build Tauri package
-        run: pnpm tauri build
-
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: peeky-${{ matrix.os }}
-          path: ${{ matrix.artifact_glob }}
-          if-no-files-found: error
-
-      - name: Write packaging summary
-        if: always()
-        shell: bash
-        run: |
-          {
-            echo "## Peeky package result"
-            echo ""
-            echo "- runner: ${{ matrix.os }}"
-            echo "- status: ${{ job.status }}"
-            echo "- artifact glob: \`${{ matrix.artifact_glob }}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Run local CI
+        run: pnpm run ci:local
