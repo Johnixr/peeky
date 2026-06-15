@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main, feature/ocr-ci-demo]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    name: Verify OCR runtime and tests
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.13.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install OCR runtime
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install paddlepaddle paddleocr
+
+      - name: Run local CI
+        run: pnpm run ci:local
