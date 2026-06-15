@@ -30,7 +30,7 @@ const QUICK_EXPLAIN_PROMPT: &str = include_str!("../prompts/quick_explain.md");
 const QUICK_ASK_PROMPT: &str = include_str!("../prompts/quick_ask.md");
 const QUICK_TRANSLATE_PROMPT: &str = include_str!("../prompts/quick_translate.md");
 
-/// The two reusable one-shot screenshot shortcuts.
+/// The reusable one-shot screenshot shortcuts.
 /// - `Explain`: capture → preset "explain my screen" reply (no user text).
 /// - `Ask`: capture → answer the user's typed question about the screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -39,6 +39,8 @@ pub enum QuickKind {
     Ask,
     /// Translate the selected text into the user's language + a short vocab note.
     Translate,
+    /// OCR the selected region locally through an external OCR runtime.
+    Ocr,
 }
 
 /// Default copilot sub-mode when the caller passes `None` (PRD §3.1-A: reading
@@ -150,7 +152,7 @@ pub fn build_quick_messages(
     let template = match kind {
         QuickKind::Explain => QUICK_EXPLAIN_PROMPT,
         QuickKind::Ask => QUICK_ASK_PROMPT,
-        QuickKind::Translate => QUICK_TRANSLATE_PROMPT,
+        QuickKind::Translate | QuickKind::Ocr => QUICK_TRANSLATE_PROMPT,
     };
     // The system prompt is STABLE per language (only {{LANGUAGE}} is filled) so
     // its KV cache stays warm across calls. All per-call/variable content — the
@@ -163,6 +165,7 @@ pub fn build_quick_messages(
         QuickKind::Ask => "Answer my question about this screen.".to_string(),
         QuickKind::Explain => "Explain what's on my screen, concisely.".to_string(),
         QuickKind::Translate => "Translate the text in this image.".to_string(),
+        QuickKind::Ocr => "Extract the text in this image.".to_string(),
     };
     let ctx = context.trim();
     let user_text = if ctx.is_empty() {
@@ -182,7 +185,10 @@ pub fn build_quick_messages(
 
     vec![
         ChatMessage::text("system", &system),
-        ChatMessage { role: "user".to_string(), content },
+        ChatMessage {
+            role: "user".to_string(),
+            content,
+        },
     ]
 }
 

@@ -27,6 +27,7 @@ TypeScript + Vite 的 webview 前端（`src/`）。它是一只可拖拽、无�
   - `Ctrl+Shift+E` —— **讲解**所选内容
   - `Ctrl+Shift+B` —— 对它**提问**（输入文字）
   - `Ctrl+Shift+T` —— **翻译** + 简短生词讲解
+  - `Ctrl+Shift+O` —— 通过 PaddleOCR 兼容命令行在本地 **OCR** 所选内容
 - **克制引擎** —— 每小时发言预算、安静时段、跟随系统专注 / 勿扰、全屏自动暂停——
   让 peeky 永远不会变成"大眼夹"。
 - **OpenAI 兼容流式** —— 任意 `/chat/completions` 端点（云端 / 私有 / 本地）。
@@ -77,12 +78,33 @@ Windows **没有 per-app 的"屏幕录制"开关**——peeky 第一次截图时
 | 快捷键 | 动作 |
 | --- | --- |
 | `Ctrl+Shift+Space` | 手动触发（截图 + 开口） |
-| `Ctrl+Shift+E` / `B` / `T` | 框选 → 讲解 / 提问 / 翻译 |
+| `Ctrl+Shift+E` / `B` / `T` / `O` | 框选 → 讲解 / 提问 / 翻译 / OCR |
 | `Ctrl+Shift+M` | 切换人格模式 |
 | `Ctrl+Shift+P` | 暂停 / 恢复 |
 | `Ctrl+Shift+S` | 打开设置 |
 
 单击精灵切换卡片；双击暂停；右键手动触发。
+
+### 本地 OCR 运行时
+
+`Ctrl+Shift+O` 复用冻结屏幕选区流程，选完后把裁剪图交给本地 OCR 命令。
+默认要求 `PATH` 中存在 `paddleocr`：
+
+```sh
+python3 -m venv .venv-ocr
+source .venv-ocr/bin/activate
+pip install paddlepaddle paddleocr
+pnpm run ci:ocr-runtime
+```
+
+如果命令不在 `PATH`，可设置 `PEEKY_OCR_CMD=/path/to/paddleocr`。额外参数可
+通过 `PEEKY_OCR_EXTRA_ARGS` 追加。
+
+### CI 与打包
+
+GitHub Actions 会运行前端类型检查、Rust 测试、OCR 运行时检查，然后分别构建
+macOS 和 Windows 的 Tauri 包。打包 job 会上传产物，并在 Actions 页面写入打包
+结果摘要，便于追踪是否成功。
 
 ## 项目结构
 

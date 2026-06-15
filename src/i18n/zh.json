@@ -36,6 +36,7 @@
   "error.config_incomplete": "请先在设置里填写 API 地址、密钥和模型名（Ctrl+Shift+S）。",
   "error.capture": "无法截屏——请允许 Peeky 截取屏幕(首次使用时会弹出系统询问)。",
   "error.api": "模型请求失败",
+  "error.ocr": "OCR 识别失败",
   "error.empty_response": "模型返回了空内容——试试调高 max tokens（有些模型会强制隐藏的「思考」过程，把预算吃光）。",
   "error.agent_limit": "已达操作步数上限，已停止。",
   "error.tool_blocked": "操作被拦截",
@@ -57,6 +58,7 @@
   "status.typing": "正在输入…",
   "status.key": "正在按键…",
   "status.acting": "正在操作…",
+  "status.ocr": "正在 OCR 识别…",
 
   "ask.placeholder": "问问这个画面…",
   "ask.hint": "Enter 发送 · Shift+Enter 换行 · Esc 取消",
