@@ -14,7 +14,7 @@ use base64::Engine as _;
 /// Run OCR for a cropped JPEG/PNG image encoded as base64.
 ///
 /// Defaults to:
-/// `paddleocr --image_dir <temp-file> --use_angle_cls true --lang ch --show_log false`
+/// `paddleocr ocr -i <temp-file> --lang ch --use_textline_orientation true`
 ///
 /// Runtime knobs:
 /// - `PEEKY_OCR_CMD`: command name/path, default `paddleocr`
@@ -35,14 +35,13 @@ pub fn recognize_image_base64(image_base64: &str) -> Result<String> {
     let cmd = std::env::var("PEEKY_OCR_CMD").unwrap_or_else(|_| "paddleocr".to_string());
     let mut command = Command::new(&cmd);
     command
-        .arg("--image_dir")
+        .arg("ocr")
+        .arg("-i")
         .arg(&path)
-        .arg("--use_angle_cls")
-        .arg("true")
         .arg("--lang")
         .arg("ch")
-        .arg("--show_log")
-        .arg("false");
+        .arg("--use_textline_orientation")
+        .arg("true");
 
     if let Ok(extra) = std::env::var("PEEKY_OCR_EXTRA_ARGS") {
         for arg in extra.split_whitespace().filter(|s| !s.is_empty()) {
@@ -65,7 +64,8 @@ pub fn recognize_image_base64(image_base64: &str) -> Result<String> {
         ));
     }
 
-    let text = extract_readable_text(&stdout);
+    let combined_output = format!("{stdout}\n{stderr}");
+    let text = extract_readable_text(&combined_output);
     if text.trim().is_empty() {
         return Err(anyhow!("OCR produced no text. stderr: {}", stderr.trim()));
     }
@@ -83,15 +83,20 @@ fn temp_image_path() -> std::path::PathBuf {
 /// PaddleOCR output differs by version. Prefer quoted text fragments from the
 /// common tuple/list formats, but fall back to cleaned raw lines.
 fn extract_readable_text(raw: &str) -> String {
+    let rec_texts = raw
+        .lines()
+        .filter_map(rec_texts_fragments)
+        .flatten()
+        .collect();
+    let rec_texts = dedupe_lines(rec_texts);
+    if !rec_texts.is_empty() {
+        return rec_texts.join("\n");
+    }
+
     let mut lines = Vec::new();
     for line in raw.lines() {
         let trimmed = line.trim();
-        if trimmed.is_empty()
-            || trimmed.starts_with("[")
-                && (trimmed.contains("dt_boxes")
-                    || trimmed.contains("rec_res")
-                    || trimmed.contains("Predict"))
-        {
+        if should_skip_ocr_output_line(trimmed) {
             continue;
         }
 
@@ -103,6 +108,30 @@ fn extract_readable_text(raw: &str) -> String {
         }
     }
     dedupe_lines(lines).join("\n")
+}
+
+fn should_skip_ocr_output_line(line: &str) -> bool {
+    line.is_empty()
+        || line.contains("NotOpenSSLWarning")
+        || line.contains("warnings.warn(")
+        || line.starts_with("Creating model:")
+        || line.starts_with("Model files already exist.")
+        || line.starts_with("[")
+            && (line.contains("dt_boxes")
+                || line.contains("rec_res")
+                || line.contains("Predict")
+                || line.contains("paddleocr INFO"))
+        || line.starts_with("{") && line.contains("'res':")
+}
+
+fn rec_texts_fragments(line: &str) -> Option<Vec<String>> {
+    let marker = "'rec_texts':";
+    let marker_start = line.find(marker)?;
+    let after_marker = &line[marker_start + marker.len()..];
+    let list_start = after_marker.find('[')?;
+    let list = &after_marker[list_start..];
+    let list_end = list.find(']')?;
+    Some(quoted_fragments(&list[..=list_end]))
 }
 
 fn quoted_fragments(line: &str) -> Vec<String> {
@@ -164,5 +193,26 @@ mod tests {
         let text = extract_readable_text(raw);
         assert!(text.contains("Hello OCR"));
         assert!(text.contains("第二行"));
+    }
+
+    #[test]
+    fn extracts_text_from_paddleocr_v3_rec_texts_output() {
+        let raw = "{'res': {'input_path': '/tmp/image.png', 'rec_texts': ['Hello OCR', '第二行'], 'rec_scores': array([0.99, 0.98])}}";
+        let text = extract_readable_text(raw);
+        assert_eq!(text, "Hello OCR\n第二行");
+    }
+
+    #[test]
+    fn ignores_paddleocr_v3_metadata_when_no_text_is_detected() {
+        let raw = "{'res': {'input_path': '/tmp/image.png', 'rec_texts': [], 'rec_scores': array([], dtype=float64)}}";
+        let text = extract_readable_text(raw);
+        assert!(text.is_empty());
+    }
+
+    #[test]
+    fn extracts_text_from_paddleocr_v3_stderr_with_warning() {
+        let raw = "/.venv-ocr/lib/python3.9/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+\n  warnings.warn(\nCreating model: ('PP-OCRv6_medium_rec', None, None)\n[2026/06/16 03:49:30] paddleocr INFO: Processed item 0 in 2537 ms\n{'res': {'input_path': '/tmp/image.png', 'rec_texts': ['Peeky OCR'], 'rec_scores': array([0.99])}}";
+        let text = extract_readable_text(raw);
+        assert_eq!(text, "Peeky OCR");
     }
 }

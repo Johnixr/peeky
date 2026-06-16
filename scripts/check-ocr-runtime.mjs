@@ -24,7 +24,7 @@ log(`ocr command: ${command}`);
 log("");
 log("Expected runtime:");
 log("- PaddleOCR CLI must be available on PATH, or PEEKY_OCR_CMD must point to it.");
-log("- The app calls: paddleocr --image_dir <selected-region.jpg> --use_angle_cls true --lang ch --show_log false");
+log("- The app calls: paddleocr ocr -i <selected-region.jpg> --lang ch --use_textline_orientation true");
 log("- On a clean CI runner this usually fails until the OCR runtime is installed.");
 log("");
 
@@ -56,6 +56,23 @@ if (version.status !== 0) {
   log("");
   log(`Result: FAILED, "${command} --version" exited with ${version.status}`);
   process.exit(version.status || 1);
+}
+
+const ocrHelp = run(command, ["ocr", "--help"]);
+if (ocrHelp.error) {
+  log("");
+  log("Result: FAILED");
+  log(`reason: cannot execute "${command} ocr --help"`);
+  log(`node error: ${ocrHelp.error.message}`);
+  process.exit(1);
+}
+
+if (ocrHelp.status !== 0) {
+  log("");
+  log(`Result: FAILED, "${command} ocr --help" exited with ${ocrHelp.status}`);
+  log("Command stderr:");
+  log(ocrHelp.stderr.trim() || "(empty)");
+  process.exit(ocrHelp.status || 1);
 }
 
 log("");

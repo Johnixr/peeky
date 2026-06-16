@@ -1,9 +1,8 @@
 //! Cross-platform clipboard paste + restore.
 //!
-//! Saves the current clipboard, writes `text`, sends the OS paste shortcut,
-//! then restores the original contents. Used by `tools::type_text` to keep
-//! IME/CJK input robust (raw enigo keystrokes can be unreliable with some
-//! IMEs).
+//! Provides direct text clipboard writes plus a paste-and-restore helper.
+//! `tools::type_text` uses the latter to keep IME/CJK input robust (raw enigo
+//! keystrokes can be unreliable with some IMEs).
 //!
 //! The two backends are intentionally separate (one `cfg` per file) so they
 //! can never silently share an implementation — on Windows the paste shortcut
@@ -24,7 +23,26 @@ fn new_enigo() -> anyhow::Result<enigo::Enigo> {
         .map_err(|e| anyhow::anyhow!("input backend unavailable: {e}"))
 }
 
-/// Public entry point. Dispatches to the per-OS backend at compile time.
+/// Write text to the system clipboard without pasting or restoring.
+pub fn write_text(text: &str) -> Result<(), crate::error::AppError> {
+    #[cfg(target_os = "macos")]
+    {
+        macos::write_text(text)
+    }
+    #[cfg(target_os = "windows")]
+    {
+        windows::write_text(text)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        let _ = text;
+        Err(crate::error::AppError::Other(anyhow::anyhow!(
+            "write_text: unsupported platform"
+        )))
+    }
+}
+
+/// Paste text into the active app, then restore the previous text clipboard.
 pub fn paste_via_clipboard(text: &str) -> Result<(), crate::error::AppError> {
     #[cfg(target_os = "macos")]
     {

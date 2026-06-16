@@ -19,14 +19,7 @@ use enigo::{Direction, Keyboard};
 
 use crate::error::AppError;
 
-pub fn paste(text: &str) -> Result<(), AppError> {
-    // 1. Save current clipboard text. PowerShell is the only built-in reader
-    //    that exposes `Get-Clipboard`; if the host policy blocks it the read
-    //    fails, and we fall back to an empty restore (target app will still
-    //    receive our paste, just won't get its prior clipboard back).
-    let saved = read_clipboard_text().unwrap_or_default();
-
-    // 2. Put our text on the clipboard.
+pub fn write_text(text: &str) -> Result<(), AppError> {
     let mut child = Command::new("clip.exe")
         .stdin(Stdio::piped())
         .spawn()
@@ -37,7 +30,21 @@ pub fn paste(text: &str) -> Result<(), AppError> {
         .ok_or_else(|| AppError::Other(anyhow::anyhow!("clip.exe stdin unavailable")))?
         .write_all(text.as_bytes())
         .map_err(|e| AppError::Other(anyhow::anyhow!("write to clip.exe failed: {e}")))?;
-    let _ = child.wait();
+    child
+        .wait()
+        .map_err(|e| AppError::Other(anyhow::anyhow!("clip.exe wait failed: {e}")))?;
+    Ok(())
+}
+
+pub fn paste(text: &str) -> Result<(), AppError> {
+    // 1. Save current clipboard text. PowerShell is the only built-in reader
+    //    that exposes `Get-Clipboard`; if the host policy blocks it the read
+    //    fails, and we fall back to an empty restore (target app will still
+    //    receive our paste, just won't get its prior clipboard back).
+    let saved = read_clipboard_text().unwrap_or_default();
+
+    // 2. Put our text on the clipboard.
+    write_text(text)?;
 
     // 3. Simulate Ctrl+V. CRITICAL: must be `Key::Control` on Windows;
     //    reusing `Key::Meta` would either be ignored or insert Meta+V literally.
@@ -56,16 +63,7 @@ pub fn paste(text: &str) -> Result<(), AppError> {
     if !saved.is_empty() {
         // Best-effort restore; if it fails the user just has our paste text
         // in their clipboard until the next copy. Better than panicking.
-        let mut restore = Command::new("clip.exe")
-            .stdin(Stdio::piped())
-            .spawn()
-            .ok();
-        if let Some(ref mut child) = restore {
-            if let Some(stdin) = child.stdin.as_mut() {
-                let _ = stdin.write_all(saved.as_bytes());
-            }
-            let _ = child.wait();
-        }
+        let _ = write_text(&saved);
     }
     Ok(())
 }

@@ -11,9 +11,8 @@
 //!                   exposed for the copilot `get_context` tool.
 //!   * `system`    — host identity: computer name + OS label, fed into the
 //!                   quick-shortcut prompt context.
-//!   * `clipboard` — `paste_via_clipboard`: save clipboard, write text, send
-//!                   paste shortcut, restore. Used by `tools::type_text` for
-//!                   IME/CJK robustness.
+//!   * `clipboard` — direct text clipboard writes, plus paste-and-restore for
+//!                   `tools::type_text` IME/CJK robustness.
 //!   * `skip_apps` — substring list of "this isn't the user's content" window
 //!                   owners (system/overlay). Used by the xcap-based
 //!                   `capture::focused_window` and `capture::frontmost_app_name`
@@ -30,7 +29,7 @@ pub mod trigger;
 // Stable re-exports used by the rest of the crate. Consumers (trigger.rs,
 // capture.rs, tools.rs, lib.rs::system_context) only need these names — they
 // never have to touch the per-OS modules directly.
-pub use clipboard::paste_via_clipboard;
+pub use clipboard::{paste_via_clipboard, write_text as write_clipboard_text};
 pub use skip_apps::is_overlay_or_system_window;
 pub use system::{computer_name, os_label};
 pub use trigger::{front_app_context, frontmost_app_name};

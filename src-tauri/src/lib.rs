@@ -574,6 +574,9 @@ async fn run_region_ocr<R: tauri::Runtime>(
 
     match result {
         Ok(text) => {
+            if let Err(e) = crate::platform::write_clipboard_text(&text) {
+                eprintln!("[peeky] OCR clipboard copy failed: {e:#}");
+            }
             let text = format!("OCR:\n{text}");
             let _ = app.emit(EV_SPEAK, serde_json::json!({ "mode": "ocr" }));
             let _ = app.emit(EV_TOKEN, serde_json::json!({ "text": text, "done": false }));
