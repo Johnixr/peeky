@@ -15,15 +15,7 @@ use enigo::{Direction, Keyboard};
 
 use crate::error::AppError;
 
-pub fn paste(text: &str) -> Result<(), AppError> {
-    // 1. Save current clipboard (best-effort; empty on failure).
-    let saved = Command::new("pbpaste")
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .unwrap_or_default();
-
-    // 2. Put our text on the clipboard.
+pub fn write_text(text: &str) -> Result<(), AppError> {
     let mut child = Command::new("pbcopy")
         .stdin(Stdio::piped())
         .spawn()
@@ -35,6 +27,19 @@ pub fn paste(text: &str) -> Result<(), AppError> {
         .write_all(text.as_bytes())
         .map_err(AppError::Io)?;
     child.wait().map_err(AppError::Io)?;
+    Ok(())
+}
+
+pub fn paste(text: &str) -> Result<(), AppError> {
+    // 1. Save current clipboard (best-effort; empty on failure).
+    let saved = Command::new("pbpaste")
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .unwrap_or_default();
+
+    // 2. Put our text on the clipboard.
+    write_text(text)?;
 
     // 3. Simulate Cmd+V.
     {
@@ -49,13 +54,6 @@ pub fn paste(text: &str) -> Result<(), AppError> {
 
     // 4. Give the target app a moment to read the pasteboard, then restore.
     thread::sleep(Duration::from_millis(80));
-    let mut restore = Command::new("pbcopy")
-        .stdin(Stdio::piped())
-        .spawn()
-        .map_err(AppError::Io)?;
-    if let Some(stdin) = restore.stdin.as_mut() {
-        let _ = stdin.write_all(saved.as_bytes());
-    }
-    let _ = restore.wait();
+    let _ = write_text(&saved);
     Ok(())
 }

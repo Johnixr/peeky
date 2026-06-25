@@ -178,7 +178,16 @@ pub fn clear_history() {
 /// preset explanation. Also exposed as a command so the webview can trigger it.
 #[tauri::command]
 pub async fn quick_explain<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
-    crate::run_quick_explain(app).await.map_err(|e| format!("{e:#}"))
+    crate::run_quick_explain(app)
+        .await
+        .map_err(|e| format!("{e:#}"))
+}
+
+/// One-shot local OCR shortcut (Ctrl+Shift+O equivalent): freeze the screen and
+/// let the user select a region, then pass the crop to the configured OCR CLI.
+#[tauri::command]
+pub fn quick_ocr<R: Runtime>(app: AppHandle<R>) {
+    crate::begin_region_select(app, crate::modes::QuickKind::Ocr);
 }
 
 /// Step 2 of the "ask about my screen" shortcut: the user submitted their typed

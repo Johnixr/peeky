@@ -33,6 +33,7 @@ helps.
   - `Ctrl+Shift+E` — **Explain** the selection
   - `Ctrl+Shift+B` — **Ask** a typed question about it
   - `Ctrl+Shift+T` — **Translate** it + a short vocabulary note
+  - `Ctrl+Shift+O` — **OCR** the selection locally through a PaddleOCR-compatible CLI
 - **Restraint engine** — per-hour speech budget, quiet hours, follow system
   Focus / Do-Not-Disturb, fullscreen auto-pause — so peeky never becomes Clippy.
 - **OpenAI-compatible streaming** — any `/chat/completions` endpoint (cloud,
@@ -89,13 +90,36 @@ The key can instead come from the `PEEKY_API_KEY` env var (see `.env.example`) �
 | Shortcut | Action |
 | --- | --- |
 | `Ctrl+Shift+Space` | Manual trigger (capture + speak) |
-| `Ctrl+Shift+E` / `B` / `T` | Region select → explain / ask / translate |
+| `Ctrl+Shift+E` / `B` / `T` / `O` | Region select → explain / ask / translate / OCR |
 | `Ctrl+Shift+M` | Cycle personality mode |
 | `Ctrl+Shift+P` | Pause / resume |
 | `Ctrl+Shift+S` | Open settings |
 
 Single-click the mascot toggles its card; double-click pauses; right-click fires
 a manual trigger.
+
+### Local OCR runtime
+
+`Ctrl+Shift+O` uses the same freeze-frame region selector, then runs a local OCR
+command against the selected crop. By default Peeky expects `paddleocr` on
+`PATH`:
+
+```sh
+python3 -m venv .venv-ocr
+source .venv-ocr/bin/activate
+pip install paddlepaddle paddleocr
+pnpm run ci:ocr-runtime
+```
+
+Set `PEEKY_OCR_CMD=/path/to/paddleocr` if the CLI is not on `PATH`. Extra
+arguments can be appended with `PEEKY_OCR_EXTRA_ARGS`.
+
+### CI and packaging
+
+The GitHub Actions workflow runs frontend typecheck, Rust tests, verifies the
+OCR runtime, then builds Tauri packages for macOS and Windows. Package jobs
+upload the generated bundles and write a build-status summary to the Actions
+run page.
 
 ## Project layout
 

@@ -14,6 +14,7 @@ pub mod commands;
 pub mod error;
 pub mod memory;
 pub mod modes;
+pub mod ocr;
 pub mod permission;
 pub mod restraint;
 pub mod settings;
@@ -47,7 +48,10 @@ const EV_REGION_INIT: &str = "peeky://region-init";
 /// Show a transient "doing a tool" status line in the bubble (copilot mode).
 /// `key` is an i18n key the frontend localizes; `detail` is appended raw.
 fn emit_status<R: tauri::Runtime>(app: &tauri::AppHandle<R>, key: &str, detail: &str) {
-    let _ = app.emit(EV_STATUS, serde_json::json!({ "key": key, "detail": detail }));
+    let _ = app.emit(
+        EV_STATUS,
+        serde_json::json!({ "key": key, "detail": detail }),
+    );
 }
 
 /// Helper: emit a mascot state-machine transition.
@@ -61,7 +65,10 @@ fn emit_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: &str) {
 /// `pnpm tauri dev` shows what went wrong.
 fn emit_error<R: tauri::Runtime>(app: &tauri::AppHandle<R>, key: &str, detail: &str) {
     eprintln!("[peeky] error {key}: {detail}");
-    let _ = app.emit(EV_ERROR, serde_json::json!({ "key": key, "detail": detail }));
+    let _ = app.emit(
+        EV_ERROR,
+        serde_json::json!({ "key": key, "detail": detail }),
+    );
 }
 
 /// Application entrypoint, invoked from `main.rs`.
@@ -90,6 +97,7 @@ pub fn run() {
             commands::get_history,
             commands::clear_history,
             commands::quick_explain,
+            commands::quick_ocr,
             commands::ask_submit,
             commands::ask_cancel,
             commands::get_region_shot,
@@ -123,7 +131,6 @@ pub fn run() {
             tauri::async_runtime::spawn(async move {
                 overlay_click_through_loop(ct_handle).await;
             });
-
 
             // Settings window: intercept the native close button so it HIDES
             // instead of being destroyed — otherwise Ctrl+Shift+S / the gear
@@ -162,7 +169,7 @@ pub fn run() {
 /// fires on key-press only and dispatches to the matching command behavior.
 fn build_global_shortcut_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     // Ctrl+Shift+<key>: Space=trigger, M=cycle mode, P=pause, S=settings,
-    // E=explain (one-shot), B=ask (one-shot w/ text), T=translate (one-shot).
+    // E=explain, B=ask, T=translate, O=OCR (one-shot region shortcuts).
     let mods = Modifiers::CONTROL | Modifiers::SHIFT;
     let sc_trigger = Shortcut::new(Some(mods), Code::Space);
     let sc_mode = Shortcut::new(Some(mods), Code::KeyM);
@@ -171,10 +178,18 @@ fn build_global_shortcut_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlug
     let sc_explain = Shortcut::new(Some(mods), Code::KeyE);
     let sc_ask = Shortcut::new(Some(mods), Code::KeyB);
     let sc_translate = Shortcut::new(Some(mods), Code::KeyT);
+    let sc_ocr = Shortcut::new(Some(mods), Code::KeyO);
 
     tauri_plugin_global_shortcut::Builder::new()
         .with_shortcuts([
-            sc_trigger, sc_mode, sc_pause, sc_settings, sc_explain, sc_ask, sc_translate,
+            sc_trigger,
+            sc_mode,
+            sc_pause,
+            sc_settings,
+            sc_explain,
+            sc_ask,
+            sc_translate,
+            sc_ocr,
         ])
         .expect("invalid global shortcut definition")
         .with_handler(move |app, shortcut, event| {
@@ -206,6 +221,9 @@ fn build_global_shortcut_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlug
             } else if shortcut == &sc_translate {
                 // One-shot: freeze the screen → drag a region → translate it.
                 begin_region_select(handle, modes::QuickKind::Translate);
+            } else if shortcut == &sc_ocr {
+                // One-shot: freeze the screen → drag a region → OCR it locally.
+                begin_region_select(handle, modes::QuickKind::Ocr);
             }
         })
         .build()
@@ -297,9 +315,7 @@ fn system_context(active_app: &str) -> String {
 }
 
 /// Ctrl+Shift+E: capture the frontmost window and stream a concise explanation.
-pub async fn run_quick_explain<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-) -> anyhow::Result<()> {
+pub async fn run_quick_explain<R: tauri::Runtime>(app: tauri::AppHandle<R>) -> anyhow::Result<()> {
     let state = app.state::<AppState>();
     if !state.try_begin_speaking() {
         return Ok(());
@@ -340,10 +356,7 @@ pub async fn run_quick_explain<R: tauri::Runtime>(
 /// (before any focus shifts, so the frame is exactly what the user saw), park it,
 /// then show the fullscreen freeze-frame selector overlay where the user drags a
 /// precise region with a magnifier loupe. Step 2 is `finish_region` on release.
-pub fn begin_region_select<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-    kind: modes::QuickKind,
-) {
+pub fn begin_region_select<R: tauri::Runtime>(app: tauri::AppHandle<R>, kind: modes::QuickKind) {
     tauri::async_runtime::spawn(async move {
         let t0 = std::time::Instant::now();
         let state = app.state::<AppState>();
@@ -433,7 +446,10 @@ pub fn begin_region_select<R: tauri::Runtime>(
                 }
             }
         }
-        eprintln!("[peeky] region app-name ready: {} ms", t0.elapsed().as_millis());
+        eprintln!(
+            "[peeky] region app-name ready: {} ms",
+            t0.elapsed().as_millis()
+        );
     });
 }
 
@@ -453,25 +469,13 @@ fn screen_permission_ok<R: tauri::Runtime>(app: &tauri::AppHandle<R>, announce: 
 }
 
 /// Quick-shortcut step 2: the user released a selection rectangle (in frozen-image
-/// pixel coordinates). Crop it out of the parked frame and route it: Explain →
-/// stream an explanation; Ask → park the crop + pop the question input box.
-pub fn finish_region<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-    x: f64,
-    y: f64,
-    w: f64,
-    h: f64,
-) {
-    if !x.is_finite()
-        || !y.is_finite()
-        || !w.is_finite()
-        || !h.is_finite()
-        || w <= 0.0
-        || h <= 0.0
+/// pixel coordinates). Crop it out of the parked frame and route it: Explain /
+/// Translate → stream an answer; Ask → park the crop + pop the question input
+/// box; OCR → run local OCR and show the text.
+pub fn finish_region<R: tauri::Runtime>(app: tauri::AppHandle<R>, x: f64, y: f64, w: f64, h: f64) {
+    if !x.is_finite() || !y.is_finite() || !w.is_finite() || !h.is_finite() || w <= 0.0 || h <= 0.0
     {
-        eprintln!(
-            "[peeky] ignoring invalid region rect: x={x:.1} y={y:.1} w={w:.1} h={h:.1}"
-        );
+        eprintln!("[peeky] ignoring invalid region rect: x={x:.1} y={y:.1} w={w:.1} h={h:.1}");
         return;
     }
 
@@ -499,10 +503,7 @@ pub fn finish_region<R: tauri::Runtime>(
         if let Ok(bytes) =
             base64::engine::general_purpose::STANDARD.decode(captured.png_base64.as_bytes())
         {
-            let _ = std::fs::write(
-                std::env::temp_dir().join("peeky_last_capture.jpg"),
-                &bytes,
-            );
+            let _ = std::fs::write(std::env::temp_dir().join("peeky_last_capture.jpg"), &bytes);
         }
     }
     let ts = (now_ms() / 1000) as i64;
@@ -541,13 +542,72 @@ pub fn finish_region<R: tauri::Runtime>(
             }
             let _ = app.emit(EV_ASK, serde_json::json!({}));
         }
+        modes::QuickKind::Ocr => {
+            let app2 = app.clone();
+            let app_name = shot.app;
+            tauri::async_runtime::spawn(async move {
+                run_region_ocr(app2, captured, app_name, ts).await;
+            });
+        }
     }
+}
+
+async fn run_region_ocr<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    captured: crate::types::CapturedImage,
+    app_name: String,
+    ts: i64,
+) {
+    let state = app.state::<AppState>();
+    if !state.try_begin_speaking() {
+        return;
+    }
+
+    emit_state(&app, mascot_state::THINKING);
+    emit_status(&app, "status.ocr", "");
+    let app_for_ocr = app.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::ocr::recognize_image_base64(&captured.png_base64)
+    })
+    .await
+    .unwrap_or_else(|e| Err(anyhow::anyhow!("OCR task join failed: {e}")));
+
+    match result {
+        Ok(text) => {
+            if let Err(e) = crate::platform::write_clipboard_text(&text) {
+                eprintln!("[peeky] OCR clipboard copy failed: {e:#}");
+            }
+            let text = format!("OCR:\n{text}");
+            let _ = app.emit(EV_SPEAK, serde_json::json!({ "mode": "ocr" }));
+            let _ = app.emit(EV_TOKEN, serde_json::json!({ "text": text, "done": false }));
+            let _ = app.emit(EV_TOKEN, serde_json::json!({ "text": "", "done": true }));
+            emit_state(&app, mascot_state::TALKING);
+            settings::append_history(crate::types::HistoryEntry {
+                ts,
+                mode: "ocr".to_string(),
+                text,
+                app: if app_name.is_empty() {
+                    None
+                } else {
+                    Some(app_name)
+                },
+            });
+            emit_state(&app, mascot_state::IDLE);
+        }
+        Err(e) => {
+            emit_error(&app_for_ocr, "error.ocr", &format!("{e:#}"));
+            emit_state(&app_for_ocr, mascot_state::IDLE);
+        }
+    }
+    state.end_speaking();
 }
 
 /// Encode the parked freeze-frame as a JPEG data URL for the selector overlay to
 /// show as its dimmable, magnifiable background. JPEG (not PNG) keeps this off
 /// the slow path. Returns `None` if nothing is parked.
-pub fn region_shot_payload<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Option<serde_json::Value> {
+pub fn region_shot_payload<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> Option<serde_json::Value> {
     let state = app.state::<AppState>();
     let guard = state.pending_region.lock();
     let shot = guard.as_ref()?;
@@ -640,7 +700,10 @@ async fn quick_stream<R: tauri::Runtime>(
     let _ = app.emit(EV_SPEAK, serde_json::json!({ "mode": mode_str(cfg.mode) }));
     let app_for_tokens = app.clone();
     let on_token = move |chunk: &str| {
-        let _ = app_for_tokens.emit(EV_TOKEN, serde_json::json!({ "text": chunk, "done": false }));
+        let _ = app_for_tokens.emit(
+            EV_TOKEN,
+            serde_json::json!({ "text": chunk, "done": false }),
+        );
     };
 
     let model_t = std::time::Instant::now();
@@ -741,8 +804,8 @@ async fn overlay_click_through_loop<R: tauri::Runtime>(app: tauri::AppHandle<R>)
                 (Ok(cur), Ok(pos), Ok(size), Ok(scale)) => {
                     let cx = pos.x as f64 + size.width as f64 / 2.0;
                     let cy = pos.y as f64 + size.height as f64 / 2.0;
-                    let inside =
-                        (cur.x - cx).abs() <= HALF_W * scale && (cur.y - cy).abs() <= HALF_H * scale;
+                    let inside = (cur.x - cx).abs() <= HALF_W * scale
+                        && (cur.y - cy).abs() <= HALF_H * scale;
                     !inside
                 }
                 // On any read error, err toward interactive so the user is never
@@ -793,7 +856,9 @@ async fn main_loop<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
                     .store(now, std::sync::atomic::Ordering::Relaxed);
                 tokio::time::sleep(Duration::from_millis(800)).await;
                 // If something changed again during the debounce window, defer.
-                let last = state.last_change_ms.load(std::sync::atomic::Ordering::Relaxed);
+                let last = state
+                    .last_change_ms
+                    .load(std::sync::atomic::Ordering::Relaxed);
                 if last != now {
                     continue;
                 }
@@ -915,19 +980,11 @@ async fn perceive_and_speak<R: tauri::Runtime>(
         mem.observe_context(&ctx);
         mem.recent()
     };
-    let messages = modes::build_messages(
-        cfg.mode,
-        lang,
-        &captured.png_base64,
-        &memory_snapshot,
-        None,
-    );
+    let messages =
+        modes::build_messages(cfg.mode, lang, &captured.png_base64, &memory_snapshot, None);
 
     // Signal the frontend that a fresh utterance is starting (clear bubble).
-    let _ = app.emit(
-        EV_SPEAK,
-        serde_json::json!({ "mode": mode_str(cfg.mode) }),
-    );
+    let _ = app.emit(EV_SPEAK, serde_json::json!({ "mode": mode_str(cfg.mode) }));
 
     // Stream tokens to the bubble as they arrive.
     let app_for_tokens = app.clone();
@@ -981,10 +1038,7 @@ async fn perceive_and_speak<R: tauri::Runtime>(
             let mut memory = state.memory.lock();
             memory.push(trimmed);
         }
-        let _ = app.emit(
-            EV_TOKEN,
-            serde_json::json!({ "text": "", "done": true }),
-        );
+        let _ = app.emit(EV_TOKEN, serde_json::json!({ "text": "", "done": true }));
         emit_state(app, mascot_state::TALKING);
         {
             let mut stats = state.stats.lock();
@@ -1002,7 +1056,11 @@ async fn perceive_and_speak<R: tauri::Runtime>(
             ts: (now_ms() / 1000) as i64,
             mode: mode_str(cfg.mode).to_string(),
             text: trimmed.to_string(),
-            app: if app_name.is_empty() { None } else { Some(app_name) },
+            app: if app_name.is_empty() {
+                None
+            } else {
+                Some(app_name)
+            },
         });
         // Persist stats, then settle back to idle after the bubble shows.
         let stats_snapshot = state.stats.lock().clone();
@@ -1086,7 +1144,11 @@ async fn copilot_loop<R: tauri::Runtime>(
 
         for tc in &turn.tool_calls {
             if tc.name == "finish" {
-                let summary = tc.arguments.get("message").and_then(|m| m.as_str()).unwrap_or("");
+                let summary = tc
+                    .arguments
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("");
                 messages.push(json!({ "role": "tool", "tool_call_id": tc.id, "content": "ok" }));
                 finish_with_text(app, cfg, summary);
                 return Ok(());
@@ -1148,7 +1210,10 @@ fn finish_with_text<R: tauri::Runtime>(app: &tauri::AppHandle<R>, cfg: &Config, 
     let state = app.state::<AppState>();
     let _ = app.emit(EV_SPEAK, serde_json::json!({ "mode": "copilot" }));
     // Whole answer as one chunk; the bubble typewriter animates it.
-    let _ = app.emit(EV_TOKEN, serde_json::json!({ "text": trimmed, "done": false }));
+    let _ = app.emit(
+        EV_TOKEN,
+        serde_json::json!({ "text": trimmed, "done": false }),
+    );
     let _ = app.emit(EV_TOKEN, serde_json::json!({ "text": "", "done": true }));
     emit_state(app, mascot_state::TALKING);
     state.memory.lock().push(trimmed);
@@ -1157,7 +1222,11 @@ fn finish_with_text<R: tauri::Runtime>(app: &tauri::AppHandle<R>, cfg: &Config, 
         ts: (now_ms() / 1000) as i64,
         mode: mode_str(cfg.mode).to_string(),
         text: trimmed.to_string(),
-        app: if app_name.is_empty() { None } else { Some(app_name) },
+        app: if app_name.is_empty() {
+            None
+        } else {
+            Some(app_name)
+        },
     });
     let stats_snapshot = state.stats.lock().clone();
     settings::save_stats(&stats_snapshot);
@@ -1175,8 +1244,18 @@ fn tool_detail(tc: &api::ToolCall) -> String {
             .chars()
             .take(24)
             .collect(),
-        "key" => tc.arguments.get("combo").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-        "scroll" => tc.arguments.get("direction").and_then(|t| t.as_str()).unwrap_or("").to_string(),
+        "key" => tc
+            .arguments
+            .get("combo")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string(),
+        "scroll" => tc
+            .arguments
+            .get("direction")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string(),
         _ => String::new(),
     }
 }

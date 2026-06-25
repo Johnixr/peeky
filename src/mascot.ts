@@ -478,6 +478,7 @@ export function initMascot(root: HTMLElement): MascotController {
     stopTyper();
     clearHide();
     bubble.classList.remove("peeky-bubble-error", "peeky-bubble-status", "expanded");
+    bubbleText.textContent = "";
     expanded = false;
     streamDone = false;
     stickBottom = true; // follow the newest text as it streams in

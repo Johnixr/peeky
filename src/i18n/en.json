@@ -36,6 +36,7 @@
   "error.config_incomplete": "Set your API Base URL, key, and model name in settings first (Ctrl+Shift+S).",
   "error.capture": "Couldn't capture the screen — make sure screen capture is allowed for Peeky (you may be prompted on first use).",
   "error.api": "Model request failed",
+  "error.ocr": "OCR failed",
   "error.empty_response": "The model returned an empty reply — try raising max tokens (some models force a hidden \"thinking\" mode that eats the budget).",
   "error.agent_limit": "Reached the action-step limit — stopping.",
   "error.tool_blocked": "Action blocked",
@@ -57,6 +58,7 @@
   "status.typing": "Typing…",
   "status.key": "Pressing keys…",
   "status.acting": "Working…",
+  "status.ocr": "Running OCR…",
 
   "ask.placeholder": "Ask about this screen…",
   "ask.hint": "Enter to send · Shift+Enter newline · Esc to cancel",

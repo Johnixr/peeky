@@ -36,6 +36,7 @@
   "error.config_incomplete": "まず設定で API のベースURL・キー・モデル名を入力してください（Ctrl+Shift+S）。",
   "error.capture": "画面をキャプチャできません——Peeky の画面キャプチャを許可してください(初回使用时に确认が表示されます)。",
   "error.api": "モデルへのリクエストに失敗しました",
+  "error.ocr": "OCR に失敗しました",
   "error.empty_response": "モデルが空の応答を返しました——max tokens を増やしてみてください（一部のモデルは隠れた「思考」モードでトークンを使い切ります）。",
   "error.agent_limit": "操作ステップ上限に達したため停止しました。",
   "error.tool_blocked": "操作がブロックされました",
@@ -57,6 +58,7 @@
   "status.typing": "入力中…",
   "status.key": "キー操作中…",
   "status.acting": "操作中…",
+  "status.ocr": "OCR 実行中…",
 
   "ask.placeholder": "この画面について質問…",
   "ask.hint": "Enter で送信 · Shift+Enter で改行 · Esc でキャンセル",
