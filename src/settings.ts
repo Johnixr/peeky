@@ -44,6 +44,10 @@ interface Config {
   quiet_hours: QuietHours;
   follow_system_dnd: boolean;
   show_token_stats: boolean;
+  break_reminder_enabled: boolean;
+  reminder_interval_minutes: number;
+  art_style: string;
+  art_style_custom: string;
 }
 
 interface TokenStats {
@@ -63,9 +67,9 @@ interface HistoryItem {
 /** Sensible client-side fallback mirroring Config::default() in types.rs. */
 function defaultConfig(): Config {
   return {
-    api_base_url: "https://api.stepfun.com/v1",
+    api_base_url: "https://apihub.agnes-ai.com/v1",
     api_key: "",
-    model: "step-3.7-flash",
+    model: "Agnes-2.0-Flash",
     max_tokens: 300,
     temperature: 0.7,
     reasoning_effort: "low",
@@ -78,6 +82,10 @@ function defaultConfig(): Config {
     quiet_hours: { enabled: false, start: "22:00", end: "09:00" },
     follow_system_dnd: true,
     show_token_stats: true,
+    break_reminder_enabled: false,
+    reminder_interval_minutes: 25,
+    art_style: "cute_animals",
+    art_style_custom: "",
   };
 }
 
@@ -127,6 +135,8 @@ const ICONS: Record<string, string> = {
   history: SVG('<circle cx="12" cy="12" r="8.5"/><path d="M12 7.6V12l3 1.8"/>'),
   // gear — general
   general: SVG('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M21.5 12h-3M5.5 12h-3M18.7 5.3l-2.1 2.1M7.4 16.6l-2.1 2.1M18.7 18.7l-2.1-2.1M7.4 7.4 5.3 5.3"/>'),
+  // coffee cup — break reminder
+  break: SVG('<path d="M18 8h1a4 4 0 0 1 0 8h-1"/><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/>'),
 };
 
 export interface SettingsController {
@@ -188,6 +198,13 @@ export function mountSettings(root: HTMLElement, opts: MountOptions = {}): Setti
   let permissionSelect!: HTMLSelectElement;
   let languageSelect!: HTMLSelectElement;
   let showStatsInput!: HTMLInputElement;
+  let breakEnableInput!: HTMLInputElement;
+  let breakIntervalInput!: HTMLInputElement;
+  let artStyleSelect!: HTMLSelectElement;
+  let artStyleCustomInput!: HTMLTextAreaElement;
+  let testReminderBtn!: HTMLButtonElement;
+  let testReminderResult!: HTMLElement;
+  let customPromptRow!: HTMLElement;
 
   // Render the panel: a macOS-System-Settings-style layout — a left sidebar of
   // category tabs + a content pane showing one category at a time (so settings
@@ -213,6 +230,7 @@ export function mountSettings(root: HTMLElement, opts: MountOptions = {}): Setti
       { id: "behavior", icon: ICONS.behavior, label: t("settings.tab.behavior"), build: buildBehaviorTab },
       { id: "quiet", icon: ICONS.quiet, label: t("settings.tab.quiet"), build: buildQuietTab },
       { id: "mascot", icon: ICONS.mascot, label: t("settings.tab.mascot"), build: buildMascotTab },
+      { id: "break", icon: ICONS.break, label: t("settings.tab.break"), build: buildBreakTab },
       { id: "usage", icon: ICONS.usage, label: t("settings.tab.usage"), build: buildUsageTab },
       { id: "history", icon: ICONS.history, label: t("settings.tab.history"), build: buildHistoryTab },
       { id: "general", icon: ICONS.general, label: t("settings.tab.general"), build: buildGeneralTab },
@@ -586,6 +604,78 @@ export function mountSettings(root: HTMLElement, opts: MountOptions = {}): Setti
     void refresh();
   }
 
+  function buildBreakTab(root: HTMLElement): void {
+    const sec = section(root);
+
+    breakEnableInput = toggleField(sec, {
+      label: t("settings.break.enable"),
+      hint: t("settings.break.enable.hint"),
+      checked: config.break_reminder_enabled,
+    });
+
+    breakIntervalInput = numField(sec, {
+      label: t("settings.break.interval"),
+      hint: t("settings.break.interval.hint"),
+      value: String(config.reminder_interval_minutes),
+      min: 1,
+      max: 60,
+      step: 1,
+    });
+
+    artStyleSelect = selectField(sec, {
+      label: t("settings.break.artStyle"),
+      hint: t("settings.break.artStyle.hint"),
+      value: config.art_style,
+      options: [
+        { value: "cute_animals", label: t("artStyle.cute_animals") },
+        { value: "anime_girls", label: t("artStyle.anime_girls") },
+        { value: "landscape", label: t("artStyle.landscape") },
+        { value: "food", label: t("artStyle.food") },
+        { value: "pets", label: t("artStyle.pets") },
+        { value: "custom", label: t("artStyle.custom") },
+      ],
+    });
+
+    customPromptRow = fieldRow(sec, t("settings.break.customPrompt"), t("settings.break.customPrompt.hint"), false);
+    artStyleCustomInput = el("textarea", "peeky-textarea");
+    artStyleCustomInput.value = config.art_style_custom;
+    artStyleCustomInput.rows = 3;
+    artStyleCustomInput.placeholder = t("settings.break.customPrompt.placeholder");
+    customPromptRow.appendChild(artStyleCustomInput);
+
+    const toggleCustom = () => {
+      customPromptRow.style.display = artStyleSelect.value === "custom" ? "" : "none";
+    };
+    artStyleSelect.addEventListener("change", toggleCustom);
+    toggleCustom();
+
+    // Test now button.
+    const testRow = el("div", "peeky-test-row");
+    testReminderBtn = el("button", "peeky-btn peeky-btn-secondary", t("settings.break.testNow"));
+    testReminderBtn.type = "button";
+    testReminderResult = el("span", "peeky-test-result");
+    testReminderBtn.addEventListener("click", async () => {
+      readInto(config);
+      testReminderBtn.disabled = true;
+      testReminderResult.className = "peeky-test-result";
+      testReminderResult.textContent = t("settings.break.testing");
+      try {
+        await invoke("set_config", { config });
+        await invoke("test_reminder");
+        testReminderResult.classList.add("ok");
+        testReminderResult.textContent = t("settings.break.testSuccess");
+      } catch (err) {
+        testReminderResult.classList.add("err");
+        testReminderResult.textContent = `${t("settings.break.testFailed")}: ${formatErr(err)}`;
+      } finally {
+        testReminderBtn.disabled = false;
+      }
+    });
+    testRow.appendChild(testReminderBtn);
+    testRow.appendChild(testReminderResult);
+    sec.appendChild(testRow);
+  }
+
   function buildGeneralTab(root: HTMLElement): void {
     const sec = section(root);
     languageSelect = selectField(sec, {
@@ -722,6 +812,10 @@ export function mountSettings(root: HTMLElement, opts: MountOptions = {}): Setti
     cfg.permission_mode = permissionSelect.value as PermissionMode;
     cfg.language = languageSelect.value as Language;
     cfg.show_token_stats = showStatsInput.checked;
+    cfg.break_reminder_enabled = breakEnableInput.checked;
+    cfg.reminder_interval_minutes = clampInt(breakIntervalInput.value, 1, 60, cfg.reminder_interval_minutes);
+    cfg.art_style = artStyleSelect.value;
+    cfg.art_style_custom = artStyleCustomInput.value;
   }
 
   // Required-field validation (Base URL, API Key, model — PRD §8.2).

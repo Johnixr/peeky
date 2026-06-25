@@ -30,7 +30,8 @@ use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
 
 use crate::state::AppState;
-use crate::types::{mascot_state, Config, ModeKind};
+use crate::types::{mascot_state, ChatMessage, Config, ModeKind};
+use std::sync::atomic::Ordering;
 
 // ---- Event names (Rust app.emit -> JS listen) -------------------------------
 const EV_STATE: &str = "peeky://state";
@@ -44,6 +45,8 @@ const EV_STATUS: &str = "peeky://status";
 const EV_ASK: &str = "peeky://ask";
 /// Tells the freeze-frame selector window to (re)load the parked screenshot.
 const EV_REGION_INIT: &str = "peeky://region-init";
+/// Shows a floating break-reminder image that animates across the screen.
+const EV_SHOW_REMINDER: &str = "peeky://show-reminder";
 
 /// Show a transient "doing a tool" status line in the bubble (copilot mode).
 /// `key` is an i18n key the frontend localizes; `detail` is appended raw.
@@ -108,12 +111,20 @@ pub fn run() {
             commands::request_screen_capture,
             commands::open_screen_settings,
             commands::set_overlay_interactive,
+            commands::test_reminder,
+            commands::get_reminder_image,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
             // Spawn the perceive loop on Tauri's async (tokio) runtime.
             tauri::async_runtime::spawn(async move {
                 main_loop(handle).await;
+            });
+
+            // Spawn the Pomodoro break reminder loop.
+            let reminder_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                reminder_loop(reminder_handle).await;
             });
 
             // Pre-warm the static context (computer name) off the hot path,
@@ -158,6 +169,20 @@ pub fn run() {
                         *state.pending_region.lock() = None;
                     }
                 });
+            }
+
+            // Reminder window hides on close instead of being destroyed;
+            // the JS side hides it automatically after animations complete.
+            if let Some(reminder_win) = app.get_webview_window("reminder") {
+                let w = reminder_win.clone();
+                reminder_win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = w.hide();
+                    }
+                });
+                // Start as click-through (images enable clicks when visible)
+                let _ = reminder_win.set_ignore_cursor_events(true);
             }
             Ok(())
         })
@@ -1231,6 +1256,163 @@ fn finish_with_text<R: tauri::Runtime>(app: &tauri::AppHandle<R>, cfg: &Config, 
     let stats_snapshot = state.stats.lock().clone();
     settings::save_stats(&stats_snapshot);
     emit_state(app, mascot_state::IDLE);
+}
+
+/// Generate a break reminder image (text prompt -> LLM -> image generation -> emit to frontend).
+pub(crate) async fn generate_and_show_reminder<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+) -> anyhow::Result<()> {
+    let state = app.state::<AppState>();
+    let cfg = state.config_snapshot();
+
+    if cfg.api_base_url.trim().is_empty()
+        || cfg.api_key.trim().is_empty()
+        || cfg.model.trim().is_empty()
+    {
+        return Ok(());
+    }
+
+    // Resolve style description.
+    let style_desc = match cfg.art_style.as_str() {
+        "cute_animals" => "cute, adorable baby animals in soft cozy settings, pastel colors, warm lighting, kawaii style",
+        "anime_girls" => "anime-style cute girls relaxing in peaceful environments, soft pastel colors, dreamy atmosphere",
+        "landscape" => "peaceful beautiful natural landscapes, sunsets, mountains, forests, lakes, calming scenery",
+        "food" => "delicious aesthetic food photography, cozy meals, desserts, warm lighting, comfort food",
+        "pets" => "cute domestic pets (cats, dogs, bunnies) in funny or relaxing poses, heartwarming scenes",
+        "custom" => {
+            if cfg.art_style_custom.trim().is_empty() {
+                "cute adorable animals, warm cozy style"
+            } else {
+                &cfg.art_style_custom
+            }
+        }
+        _ => "cute adorable animals, warm cozy style",
+    };
+
+    let ctx = system_context("");
+    let lang = cfg.language.resolve();
+    let break_text = match lang {
+        crate::types::ResolvedLang::Zh => "The Chinese text \"休息一下\" is elegantly written in a soft, friendly font in one corner of the image, blending naturally with the scene",
+        crate::types::ResolvedLang::Ja => "The Japanese text \"休憩しましょう\" is elegantly written in a soft, friendly font in one corner of the image, blending naturally with the scene",
+        crate::types::ResolvedLang::En => "The text \"Take a break\" is elegantly written in a soft, friendly font in one corner of the image, blending naturally with the scene",
+    };
+    let system_prompt = format!(
+        "You are a creative image prompt generator. Generate a short, vivid prompt for an image that will remind the user to take a break, look away from the screen, and rest their eyes. The user prefers this visual style: {style_desc}. Current context: {ctx}. Incorporate seasonal or time-of-day elements naturally. {break_text}. Return ONLY the prompt text, no explanation, no quotes, in English, 30-50 words."
+    );
+
+    let messages = vec![
+        ChatMessage::text("system", &system_prompt),
+        ChatMessage::text("user", "Generate a creative break reminder image prompt now."),
+    ];
+
+    // Generate prompt, with fallback if LLM fails.
+    let fallback_prompt = format!("A cute fluffy kitten sleeping on a soft blanket near a window with warm afternoon sunlight, peaceful cozy atmosphere, pastel colors, reminding you to rest your eyes. {break_text}");
+    let image_prompt = match api::non_streaming_chat(&cfg, messages, 256, 0.8).await {
+        Ok(p) => {
+            let trimmed = p.trim().trim_matches('"').trim_matches('\'').to_string();
+            if trimmed.is_empty() {
+                fallback_prompt
+            } else {
+                format!("{trimmed}. {break_text}")
+            }
+        }
+        Err(e) => {
+            eprintln!("[peeky] reminder prompt generation failed, using fallback: {e:#}");
+            fallback_prompt
+        }
+    };
+
+    // Generate image.
+    let b64_data = match api::generate_image(&cfg, &image_prompt).await {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("[peeky] reminder image generation failed: {e:#}");
+            return Err(e);
+        }
+    };
+
+    // Detect the real image type from the base64 magic bytes — Agnes returns PNG,
+    // and WKWebView is strict about a mismatched data: MIME (a PNG labeled JPEG
+    // silently fails to decode).
+    let mime = if b64_data.starts_with("iVBORw0KGgo") {
+        "image/png"
+    } else if b64_data.starts_with("/9j/") {
+        "image/jpeg"
+    } else if b64_data.starts_with("R0lGOD") {
+        "image/gif"
+    } else if b64_data.starts_with("UklGR") {
+        "image/webp"
+    } else {
+        "image/png"
+    };
+    let data_url = format!("data:{mime};base64,{b64_data}");
+
+    // Park the image so the reminder window can PULL it via `get_reminder_image`
+    // once its webview is ready (avoids the event-before-listener race that would
+    // drop a pushed payload at a hidden window that hasn't run its boot() yet).
+    *state.pending_reminder.lock() = Some(data_url);
+
+    // Show and resize the full-screen reminder window to cover the entire primary monitor.
+    if let Some(reminder_win) = app.get_webview_window("reminder") {
+        if let Ok(Some(monitor)) = reminder_win.current_monitor() {
+            let scale = monitor.scale_factor();
+            let size = monitor.size();
+            let _ = reminder_win.set_size(tauri::Size::Logical(tauri::LogicalSize {
+                width: size.width as f64 / scale,
+                height: size.height as f64 / scale,
+            }));
+            let _ = reminder_win.set_position(tauri::Position::Logical(tauri::LogicalPosition { x: 0.0, y: 0.0 }));
+        }
+        let _ = reminder_win.set_ignore_cursor_events(false);
+        let _ = reminder_win.show();
+        let _ = reminder_win.set_focus();
+        // Lightweight "ready" ping (no payload) — the window also pulls on focus/
+        // first-mount, so even if this races ahead of the listener nothing is lost.
+        let _ = reminder_win.emit(EV_SHOW_REMINDER, ());
+    }
+
+    let now = now_ms();
+    state.last_reminder_ms.store(now, Ordering::Relaxed);
+
+    Ok(())
+}
+
+/// Background loop that fires break reminders at configured intervals.
+async fn reminder_loop<R: tauri::Runtime>(app: tauri::AppHandle<R>) {
+    let mut ticker = tokio::time::interval(Duration::from_secs(60));
+    loop {
+        ticker.tick().await;
+
+        let state = app.state::<AppState>();
+        if state.is_paused() {
+            continue;
+        }
+        let cfg = state.config_snapshot();
+        if !cfg.break_reminder_enabled {
+            continue;
+        }
+        let interval_min = cfg.reminder_interval_minutes.clamp(1, 60);
+        if !state.try_begin_reminder() {
+            continue;
+        }
+
+        let now = now_ms();
+        let last = state.last_reminder_ms.load(Ordering::Relaxed);
+        let interval_ms = (interval_min as u64) * 60 * 1000;
+        if last != 0 && now.saturating_sub(last) < interval_ms {
+            state.end_reminder();
+            continue;
+        }
+
+        let app2 = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app2.state::<AppState>();
+            if let Err(e) = generate_and_show_reminder(&app2).await {
+                eprintln!("[peeky] reminder generation failed: {e:#}");
+            }
+            state.end_reminder();
+        });
+    }
 }
 
 /// Compact human detail appended to a tool's status line (e.g. the typed text).

@@ -59,6 +59,23 @@
         "visible": false,
         "focus": true,
         "fullscreen": false
+      },
+      {
+        "label": "reminder",
+        "title": "Peeky · Reminder",
+        "url": "reminder.html",
+        "width": 1920,
+        "height": 1080,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "visible": false,
+        "focus": false,
+        "fullscreen": false,
+        "acceptFirstMouse": false
       }
     ],
     "security": {

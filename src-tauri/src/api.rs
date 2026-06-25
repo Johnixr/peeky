@@ -432,12 +432,131 @@ pub async fn test_connection(config: &Config) -> Result<String> {
     Ok(reply)
 }
 
+/// Simple non-streaming chat completion call, returns the text content.
+/// Used for short tasks like prompt generation.
+pub async fn non_streaming_chat(
+    config: &Config,
+    messages: Vec<ChatMessage>,
+    max_tok: u32,
+    temp: f32,
+) -> Result<String> {
+    let url = build_endpoint(&config.api_base_url);
+
+    let mut body = json!({
+        "model": config.model,
+        "messages": messages,
+        "max_tokens": max_tok,
+        "temperature": temp,
+        "stream": false,
+    });
+    apply_reasoning(&mut body, ReasoningEffort::Low);
+
+    let client = http_client()?;
+    let mut req = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body);
+
+    if !config.api_key.is_empty() {
+        req = req.bearer_auth(&config.api_key);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .context("non-streaming chat request failed")?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "chat returned {}: {}",
+            status,
+            truncate(&detail, 500)
+        ));
+    }
+
+    let parsed: Value = resp.json().await.context("chat returned non-JSON")?;
+    let content = parsed
+        .get("choices")
+        .and_then(|c| c.get(0))
+        .and_then(|c0| c0.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|c| c.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    Ok(content)
+}
+
+/// Generate an image using the Agnes /images/generations endpoint.
+/// Returns base64-encoded image bytes (PNG).
+pub async fn generate_image(config: &Config, prompt: &str) -> Result<String> {
+    let url = build_image_endpoint(&config.api_base_url);
+
+    // Agnes API uses size in WxH format. For base64 output: both return_base64: true
+    // at top level AND extra_body.response_format: "b64_json" for safety
+    let body = json!({
+        "model": "agnes-image-2.1-flash",
+        "prompt": prompt,
+        "size": "1024x576", // 16:9 aspect ratio, standard resolution
+        "return_base64": true,
+        "extra_body": {
+            "response_format": "b64_json"
+        }
+    });
+
+    let client = http_client()?;
+    let mut req = client
+        .post(&url)
+        .header("Content-Type", "application/json")
+        .json(&body);
+
+    if !config.api_key.is_empty() {
+        req = req.bearer_auth(&config.api_key);
+    }
+
+    let resp = req
+        .send()
+        .await
+        .context("request to images/generations endpoint failed")?;
+
+    let status = resp.status();
+    if !status.is_success() {
+        let detail = resp.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "images/generations returned {}: {}",
+            status,
+            truncate(&detail, 500)
+        ));
+    }
+
+    let parsed: Value = resp.json().await.context("image endpoint returned non-JSON response")?;
+
+    // Agnes API with return_base64: true returns data[0].b64_json
+    let b64 = parsed
+        .get("data")
+        .and_then(|d| d.get(0))
+        .and_then(|d0| d0.get("b64_json"))
+        .and_then(|b| b.as_str())
+        .ok_or_else(|| anyhow!("image response missing data[0].b64_json"))?
+        .to_string();
+
+    Ok(b64)
+}
+
 /// Join the configured base URL with the chat-completions path, tolerating a
 /// trailing slash. We do not invent a `/v1` segment — the user's `api_base_url`
 /// is expected to already include it (PRD §1.5 example values).
 fn build_endpoint(base: &str) -> String {
     let trimmed = base.trim_end_matches('/');
     format!("{trimmed}/chat/completions")
+}
+
+/// Join base URL with the images/generations path.
+fn build_image_endpoint(base: &str) -> String {
+    let trimmed = base.trim_end_matches('/');
+    format!("{trimmed}/images/generations")
 }
 
 /// Rough token estimate (~4 chars/token heuristic) used only when the backend

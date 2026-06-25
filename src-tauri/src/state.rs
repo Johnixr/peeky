@@ -82,6 +82,19 @@ pub struct AppState {
     /// events so the user can scroll/click/type. When false, only the sprite area
     /// catches clicks and the rest passes through to apps underneath.
     pub overlay_interactive: AtomicBool,
+
+    /// Wall-clock millis of the last break reminder image shown, used by the
+    /// reminder loop to enforce the configured interval. 0 = none yet.
+    pub last_reminder_ms: AtomicU64,
+
+    /// Guards against overlapping reminder image generations (similar to `speaking`
+    /// but for the reminder pipeline) so we don't stack API calls if generation is slow.
+    pub reminder_generating: AtomicBool,
+
+    /// The latest generated reminder image as a `data:` URL, parked here for the
+    /// reminder window to PULL via `get_reminder_image` once it's shown (mirrors
+    /// the proven region-shot pull model, avoiding the event-before-listener race).
+    pub pending_reminder: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -99,6 +112,9 @@ impl AppState {
             pending_shot: Mutex::new(None),
             pending_region: Mutex::new(None),
             overlay_interactive: AtomicBool::new(false),
+            last_reminder_ms: AtomicU64::new(0),
+            reminder_generating: AtomicBool::new(false),
+            pending_reminder: Mutex::new(None),
         }
     }
 
@@ -133,5 +149,17 @@ impl AppState {
     /// Release the speaking slot.
     pub fn end_speaking(&self) {
         self.speaking.store(false, Ordering::Release);
+    }
+
+    /// Try to claim the reminder generation slot. Returns true if claimed.
+    pub fn try_begin_reminder(&self) -> bool {
+        self.reminder_generating
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+    }
+
+    /// Release the reminder generation slot.
+    pub fn end_reminder(&self) {
+        self.reminder_generating.store(false, Ordering::Release);
     }
 }
