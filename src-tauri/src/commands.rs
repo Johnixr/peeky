@@ -292,3 +292,23 @@ pub fn open_screen_settings() {
             .spawn();
     }
 }
+
+/// Immediately trigger a break reminder image (for the "Test now" button in settings).
+#[tauri::command]
+pub async fn test_reminder<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    if !state.try_begin_reminder() {
+        return Err("A reminder is already being generated — wait a moment.".to_string());
+    }
+    let res = crate::generate_and_show_reminder(&app).await;
+    state.end_reminder();
+    res.map_err(|e| format!("{e:#}"))
+}
+
+/// The reminder overlay window PULLS the parked image once it's shown (mirrors
+/// `get_region_shot`). Returns null if nothing is parked. Taking it out clears
+/// the slot so the same image isn't shown twice.
+#[tauri::command]
+pub fn get_reminder_image(state: State<'_, AppState>) -> Option<String> {
+    state.pending_reminder.lock().take()
+}

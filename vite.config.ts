@@ -24,13 +24,17 @@ export default defineConfig(async () => ({
     target: "safari14",
     minify: process.env.TAURI_ENV_DEBUG ? false : "esbuild",
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
-    // Two HTML entry points: the mascot overlay (index.html, transparent) and
-    // the dedicated opaque settings window (settings.html).
+    // HTML entry points:
+    // - main: the mascot overlay (transparent, small, always-on-top)
+    // - settings: opaque settings window
+    // - capture: freeze-frame region selector
+    // - reminder: full-screen transparent overlay for floating reminder images
     rollupOptions: {
       input: {
         main: "index.html",
         settings: "settings.html",
         capture: "capture.html",
+        reminder: "reminder.html",
       },
     },
   },

@@ -172,6 +172,26 @@ pub struct Config {
     pub follow_system_dnd: bool,
     /// Whether the settings UI shows the token-usage stats (PRD §8.2).
     pub show_token_stats: bool,
+    /// Enable Agnes-powered break reminder images that float across screen at intervals.
+    #[serde(default)]
+    pub break_reminder_enabled: bool,
+    /// Interval in minutes between break reminders (1-60).
+    #[serde(default = "default_reminder_interval")]
+    pub reminder_interval_minutes: u32,
+    /// Art style preset for generated reminder images.
+    #[serde(default = "default_art_style")]
+    pub art_style: String,
+    /// Custom art style prompt when style is set to "custom".
+    #[serde(default)]
+    pub art_style_custom: String,
+}
+
+fn default_reminder_interval() -> u32 {
+    25
+}
+
+fn default_art_style() -> String {
+    "cute_animals".to_string()
 }
 
 /// Default reasoning effort for new configs + missing-field migration: `Low` is
@@ -186,9 +206,9 @@ impl Default for Config {
     /// empty on purpose: it must come from the user or PEEKY_API_KEY.
     fn default() -> Self {
         Config {
-            api_base_url: "https://api.stepfun.com/v1".to_string(),
+            api_base_url: "https://apihub.agnes-ai.com/v1".to_string(),
             api_key: String::new(),
-            model: "step-3.7-flash".to_string(),
+            model: "Agnes-2.0-Flash".to_string(),
             // 512 (not 300) so models that emit a hidden "thinking" pass before
             // the real answer don't exhaust the budget and return empty content
             // (PRD §1.5). Replies are still naturally short; this is only a cap.
@@ -204,6 +224,10 @@ impl Default for Config {
             quiet_hours: QuietHours::default(),
             follow_system_dnd: true,
             show_token_stats: true,
+            break_reminder_enabled: false,
+            reminder_interval_minutes: default_reminder_interval(),
+            art_style: default_art_style(),
+            art_style_custom: String::new(),
         }
     }
 }

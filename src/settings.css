@@ -256,7 +256,8 @@ body.peeky-settings-window {
 }
 
 .peeky-input,
-.peeky-select {
+.peeky-select,
+.peeky-textarea {
   width: 100%;
   font-family: inherit;
   font-size: 13px;
@@ -269,8 +270,14 @@ body.peeky-settings-window {
   user-select: text;
   -webkit-user-select: text;
 }
+.peeky-textarea {
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.5;
+}
 .peeky-input:focus,
-.peeky-select:focus {
+.peeky-select:focus,
+.peeky-textarea:focus {
   border-color: var(--peeky-accent-nerd);
   box-shadow: 0 0 0 3px rgba(91, 110, 225, 0.25);
 }
